@@ -1,0 +1,257 @@
+       #!/usr/bin/python
+       
+    1: import json
+    1: import clang.cindex
+    1: from clang.cindex import Diagnostic, CursorKind, TokenKind
+       
+    1: from base_support import *
+    1: from SimpleEval import simple_eval
+       
+       #-------------------------------------------------------------------------------
+       # TODO: A visitor object is required for each different function, not for the
+       # whole translation unit!!!
+       
+       #-------------------------------------------------------------------------------
+    1: CONDITIONAL_OPERATORS = ["==", "!=", "<", ">", ">=", "<=", "?"]
+       
+       #-------------------------------------------------------------------------------
+    1: def severity2text(severity):
+   10:   if severity == Diagnostic.Ignored:
+           return ""
+   10:   elif severity == Diagnostic.Note:
+           return "note"
+   10:   elif severity == Diagnostic.Warning:
+   10:     return "warning"
+         elif severity == Diagnostic.Error:
+           return "error"
+         elif severity == Diagnostic.Fatal:
+           return "fatal"
+         else:
+           return "unknown"
+       
+       #-------------------------------------------------------------------------------
+    2: class CCLangVisitor:
+    1:   def __init__(self, name):
+  348:     self.conditions = 0
+  348:     self.name = name
+  348:     self.loops = 0
+  348:     self.enums = {}
+  348:     self.calls = set()
+  348:     self.switches = []
+  348:     self.constants = set()
+  348:     self.externals = set()
+       
+    1:   def __str__(self):
+           msg = "<Function %s: conditions %d, loops %d, calls %s, switches %s, externals %s, constants %s>" 
+           return msg % (self.name, self.conditions, self.loops, self.calls,
+                         self.switches, self.externals, self.constants)
+       
+    1:   def __repr__(self):
+           return self.__str__()
+       
+    1:   def visit_BINARY_OPERATOR(self, cursor):
+1599258:     for token in cursor.get_tokens():
+1591527:       if token.spelling in CONDITIONAL_OPERATORS:
+36712:         self.conditions += 1
+       
+    1:   def visit_LITERAL(self, cursor):
+1674731:     for token in cursor.get_tokens():
+1665300:       if token.kind != TokenKind.LITERAL:
+1537142:         continue
+       
+128158:       tmp = token.spelling
+128158:       if cursor.kind == CursorKind.FLOATING_LITERAL:
+    3:         if tmp.endswith("f"):
+                 tmp = tmp.strip("f")
+128155:       elif cursor.kind == CursorKind.STRING_LITERAL or tmp.find('"') > -1 or tmp.find("'") > -1:
+22742:         if tmp.startswith('"') and tmp.endswith('"'):
+19027:           tmp = get_printable_value(tmp.strip('"'))
+19027:           self.externals.add(tmp)
+       
+22742:         self.constants.add(tmp)
+22742:         continue
+       
+105416:       result = simple_eval(tmp)
+       
+    1:   def visit_ENUM_DECL(self, cursor):
+           value = 0
+           for children in cursor.get_children():
+             tokens = list(children.get_tokens())
+             name = tokens[0].spelling
+             if len(tokens) == 3:
+               value = get_clean_number(tokens[2].spelling)
+       
+             self.enums[name] = value
+             if len(tokens) == 1:
+               value += 1
+       
+           return True
+         
+    1:   def visit_IF_STMT(self, cursor):
+           # Perform some (fortunately) not too complex parsing of the IF_STMT as the
+           # Clang Python bindings always lack support for everything half serious one
+           # needs to do...
+ 1669:     tokens = list(cursor.get_tokens())
+ 1669:     par_level = 0
+ 1669:     tmp_conds = 0
+ 1669:     at_least_one_parenthesis = False
+17199:     for token in tokens:
+17194:       clean_token = str(token.spelling)
+17194:       if clean_token == "(":
+               # The first time we find a parenthesis we can consider there is at least
+               # one condition.
+ 2529:         if not at_least_one_parenthesis:
+ 1665:           tmp_conds += 1
+       
+ 2529:         at_least_one_parenthesis = True
+ 2529:         par_level += 1
+14665:       elif clean_token == ")":
+ 2528:         par_level -= 1
+               # After we found at least one '(' and the level of parenthesis is zero,
+               # we finished with the conditional part of the IF_STMT
+ 2528:         if par_level == 0 and at_least_one_parenthesis:
+ 1664:           break
+             # If there are 2 or more conditions, these operators will be required
+12137:       elif clean_token in ["||", "&&"]:
+  403:         tmp_conds += 1
+       
+ 1669:     self.conditions += tmp_conds
+       
+    1:   def visit_CALL_EXPR(self, cursor):
+ 2047:     self.calls.add(cursor.spelling)
+       
+    1:   def visit_loop(self, cursor):
+  557:     self.loops += 1
+       
+    1:   def visit_WHILE_STMT(self, cursor):
+  130:     self.visit_loop(cursor)
+       
+    1:   def visit_FOR_STMT(self, cursor):
+   94:     self.visit_loop(cursor)
+       
+    1:   def visit_DO_STMT(self, cursor):
+  333:     self.visit_loop(cursor)
+         
+    1:   def visit_SWITCH_STMT(self, cursor):
+           # As always, the easiest way to get the cases and values from a SWITCH_STMT
+           # using the CLang Python bindings is by parsing the tokens...
+   24:     cases = set()
+   24:     next_case = False
+   24:     default = 0
+ 9684:     for token in cursor.get_tokens():
+ 9660:       clean_token = str(token.spelling)
+             # The next token will be the case value
+ 9660:       if clean_token == "case":
+  124:         next_case = True
+  124:         continue
+             # Do not do anything special with default cases, other than recording it
+ 9536:       elif clean_token == "default":
+   16:         default = 1
+   16:         continue
+       
+ 9520:       if next_case:
+  124:         next_case = False
+               # We use a set() for the cases to "automagically" order them
+  124:         cases.add(clean_token)
+       
+   24:     self.switches.append([len(cases) + default, list(cases)])
+       
+       #-------------------------------------------------------------------------------
+    2: class CLangParser:
+    1:   def __init__(self):
+   41:     self.index = None
+   41:     self.tu = None
+   41:     self.diags = None
+   41:     self.source_path = None
+   41:     self.warnings = 0
+   41:     self.errors = 0
+   41:     self.fatals = 0
+   41:     self.total_elements = 0
+       
+    1:   def parse(self, src, args):
+   41:     self.source_path = src
+   41:     self.index = clang.cindex.Index.create()
+   41:     self.tu = self.index.parse(path=src, args=args)
+   41:     self.diags = self.tu.diagnostics
+   51:     for diag in self.diags:
+   10:       if diag.severity == Diagnostic.Warning:
+   10:         self.warnings += 1
+             elif diag.severity == Diagnostic.Error:
+               self.errors += 1
+             elif diag.severity == Diagnostic.Fatal:
+               self.fatals += 1
+       
+   10:       export_log("%s:%d,%d: %s: %s" % (diag.location.file, diag.location.line,
+   10:               diag.location.column, severity2text(diag.severity), diag.spelling))
+       
+    1:   def visitor(self, obj, cursor=None):
+79384:     if cursor is None:
+             cursor = self.tu.cursor
+       
+158420:     for children in cursor.get_children():
+79036:       self.total_elements += 1
+       
+             # Check if a visit_EXPR_TYPE member exists in the given object and call it
+             # passing the current children element.
+79036:       kind_name = str(children.kind)
+79036:       element = kind_name[kind_name.find(".")+1:]
+79036:       method_name = 'visit_%s' % element
+79036:       if method_name in dir(obj):
+12028:         func = getattr(obj, method_name)
+12028:         if func(children):
+                 continue
+       
+             # Same as before but we pass to the member any literal expression.
+79036:       method_name = 'visit_LITERAL'
+79036:       if children.kind >= CursorKind.INTEGER_LITERAL and \
+27332:            children.kind <= CursorKind.STRING_LITERAL:
+ 9431:         if method_name in dir(obj):
+ 9431:           func = getattr(obj, method_name)
+ 9431:           if func(children):
+                   continue
+       
+79036:       self.visitor(obj, cursor=children)
+       
+       #-------------------------------------------------------------------------------
+    2: class CClangExporter(CBaseExporter):
+    1:   def export_one(self, filename, args, is_c):
+   41:     parser = CLangParser()
+   41:     parser.parse(filename, args)
+   41:     self.warnings += parser.warnings
+   41:     self.errors += parser.errors
+   41:     self.fatals += parser.fatals
+       
+24368:     for element in parser.tu.cursor.get_children():
+24327:       fileobj = element.location.file
+24327:       if fileobj is not None and fileobj.name != filename:
+23733:         continue
+       
+  594:       if element.kind == CursorKind.FUNCTION_DECL:
+  511:         tokens = element.get_tokens()
+  511:         token = next(tokens, None)
+  511:         if token is None:
+  110:           continue
+       
+  401:         if token.spelling == "extern":
+   53:           continue
+       
+  348:         obj = CCLangVisitor(element.spelling)
+  348:         parser.visitor(obj, cursor=element)
+       
+  348:         with self.db as cur:
+  348:           prototype = ""
+  348:           prototype2 = ""
+       
+                 sql = """insert into functions(
+                                      ea, name, prototype, prototype2, conditions,
+                                      constants, constants_json, loops, switchs,
+                                      switchs_json, calls, externals, filename
+                                      )
+                                      values ((select count(ea)+1 from functions),
+  348:                                       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+  348:           args = (obj.name, prototype, prototype2, obj.conditions,
+  348:                   len(obj.constants), json.dumps(list(obj.constants)),
+  348:                   obj.loops, len(obj.switches), json.dumps(str(obj.switches)),
+  348:                   len(obj.calls), len(obj.externals),
+  348:                   filename)
+  348:           cur.execute(sql, args)

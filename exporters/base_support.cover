@@ -1,0 +1,214 @@
+       #!/usr/bin/python
+       
+    1: import os
+    1: import sys
+    1: import shlex
+    1: import sqlite3
+    1: import ConfigParser
+       
+    1: try:
+    1:   from colorama import init, Fore, colorama_text
+    1:   has_colorama = True
+       except:
+         has_colorama = False
+       
+       #-------------------------------------------------------------------------------
+    1: CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp"]
+    1: COLOR_SUBSTRS = {"CC ":Fore.GREEN,
+    1:                  "CXX ":Fore.GREEN, 
+    1:                  " warning:":Fore.RED, " error:":Fore.RED,
+    1:                  " fatal:":Fore.RED}
+       
+       #-------------------------------------------------------------------------------
+    1: def is_source_file(arg):
+         tmp = arg.lower()
+         for ext in CPP_EXTENSIONS:
+           if tmp.endswith(ext):
+             return True
+         return False
+       
+       #-------------------------------------------------------------------------------
+    1: def is_c_source(arg):
+         # We don't really care...
+   41:   if arg.endswith(".i"):
+           return True
+   41:   return arg.endswith(".c")
+       
+       #-------------------------------------------------------------------------------
+       # Ripped out from REgoogle
+    1: def constant_filter(value):
+         """Filter for certain constants/immediate values. Not all values should be
+         taken into account for searching. Especially not very small values that
+         may just contain the stack frame size.
+       
+         @param value: constant value
+         @type value: int
+         @return: C{True} if value should be included in query. C{False} otherwise
+         """
+       
+         # no small values
+         if value < 0x10000:
+           return False
+          
+         if value & 0xFFFFFF00 == 0xFFFFFF00 or value & 0xFFFF00 == 0xFFFF00 or \
+            value & 0xFFFFFFFFFFFFFF00 == 0xFFFFFFFFFFFFFF00 or \
+            value & 0xFFFFFFFFFFFF00 == 0xFFFFFFFFFFFF00:
+           return False
+       
+         #no single bits sets - mostly defines / flags
+         for i in xrange(64):
+           if value == (1 << i):
+             return False
+       
+         return True
+       
+       #-------------------------------------------------------------------------------
+    1: def get_printable_value(value):
+19027:   value = value.replace("\\a", "\a")
+19027:   value = value.replace("\\b", "\b")
+19027:   value = value.replace("\\f", "\f")
+19027:   value = value.replace("\\n", "\n")
+19027:   value = value.replace("\\r", "\r")
+19027:   value = value.replace("\\t", "\t")
+19027:   value = value.replace("\\v", "\v")
+19027:   value = value.replace("\\", "\\")
+19027:   value = value.replace("\\'", "\'")
+19027:   value = value.replace('\\"', '\"')
+19027:   value = value.replace('\\?', '\"')
+19027:   return value
+       
+       #-------------------------------------------------------------------------------
+    1: def get_clean_number(value):
+         tmp = value.lower()
+         c = tmp[len(tmp)-1]
+         while c in ["u", "l"]:
+           value = value[:len(value)-1]
+           c = value[len(value)-1].lower()
+       
+         if value.startswith("0x"):
+           value = int(value, 16)
+         else:
+           value = int(value)
+       
+         return value
+       
+       #-------------------------------------------------------------------------------
+    1: def truncate_str(data, size=206):
+   51:   return (data[:size] + '..') if len(data) > size else data
+       
+       #-------------------------------------------------------------------------------
+    1: def export_log(msg):
+   51:   tmp = truncate_str(msg)
+   51:   if not has_colorama:
+           print tmp
+           return
+       
+   51:   apply_colours = False
+   51:   substr = None
+  195:   for sub in COLOR_SUBSTRS:
+  195:     if tmp.find(sub) > -1:
+   51:       substr = sub
+   51:       apply_colours = True
+   51:       break
+         
+   51:   if not apply_colours:
+           print tmp
+       
+   51:   with colorama_text():
+   51:     pos1 = tmp.find(substr)
+   51:     pos2 = pos1 + len(substr)
+   51:     print(Fore.RESET + tmp[:pos1] + COLOR_SUBSTRS[substr] + tmp[pos1:pos2] + Fore.RESET + tmp[pos2:])
+       
+       #-------------------------------------------------------------------------------
+    2: class CBaseExporter:
+    1:   def __init__(self, cfg_file):
+    1:     self.cfg_file = cfg_file
+    1:     self.config = ConfigParser.ConfigParser()
+    1:     self.config.optionxform = str
+    1:     self.config.read(cfg_file)
+    1:     self.db = None
+    1:     self.create_schema(self.config.get('PROJECT', 'export-file'))
+       
+    1:     self.warnings = 0
+    1:     self.errors = 0
+    1:     self.fatals = 0
+       
+    1:   def create_schema(self, filename):
+    1:     if os.path.exists(filename):
+    1:       print "[i] Removing existing file %s" % filename
+    1:       os.remove(filename)
+       
+    1:     self.db = sqlite3.connect(filename, isolation_level=None)
+    1:     self.db.text_factory = str
+    1:     self.db.row_factory = sqlite3.Row
+       
+    1:     cur = self.db.cursor()
+           sql = """create table if not exists functions(
+                                 id integer not null primary key,
+                                 ea text,
+                                 name text,
+                                 filename text,
+                                 prototype text,
+                                 prototype2 text,
+                                 conditions integer,
+                                 conditions_json text,
+                                 constants integer,
+                                 constants_json text,
+                                 loops number,
+                                 switchs integer,
+                                 switchs_json text,
+                                 calls integer,
+    1:                           externals integer)"""
+    1:     cur.execute(sql)
+       
+           # Unused yet
+           sql = """create table if not exists callgraph(
+                                 id integer not null primary key,
+                                 project_id integer not null,
+                                 ea text,
+                                 callee text
+    1:                           )"""
+    1:     cur.execute(sql)
+       
+    1:     cur.close()
+    1:     return self.db
+       
+    1:   def export(self):
+    1:     c_args = ["-I%s" % self.config.get('GENERAL', 'includes')]
+    1:     cpp_args = list(c_args)
+    1:     tmp = self.config.get('PROJECT', 'cflags')
+    1:     if tmp != "":
+    1:       c_args.extend(shlex.split(tmp))
+       
+    1:     tmp = self.config.get('PROJECT', 'cxxflags')
+    1:     if tmp != "":
+    1:       cpp_args.extend(shlex.split(tmp))
+       
+    1:     section = "FILES"
+   42:     for item in self.config.items(section):
+   41:       filename, enabled = item
+   41:       if enabled:
+   41:         if is_c_source(filename):
+   40:           args = c_args
+   40:           msg = "[+] CC %s %s" % (filename, " ".join(args))
+   40:           is_c = True
+               else:
+    1:           args = cpp_args
+    1:           msg = "[+] CXX %s %s" % (filename, " ".join(args))
+    1:           is_c = False
+               
+   41:         export_log(msg)
+       
+   41:         try:
+   41:           self.export_one(filename, args, is_c)
+               except KeyboardInterrupt:
+                 raise
+               except:
+                 msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
+                 export_log(msg)
+                 self.fatals += 1
+                 raise
+       
+    1:   def export_one(self, filename, args, is_c):
+           raise Exception("Not implemented in the inherited class")
+       

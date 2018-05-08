@@ -1,0 +1,250 @@
+       #!/usr/bin/python
+       
+       """A simple C expressions evaluator.
+       
+       It was created as a safe eval() replacement that supports basic C expressions
+       like the following ones:
+       
+         1 + 2 * 4
+         2 << 32
+         pi ** e
+         022 + 0x11
+         -1 - -2
+         022 + 0x11 + 1.5 * -1 / 2 ** 3 >> 12
+       
+       BUGS: It supports decimal, octal and hexadecimal numbers. However, only integers
+       and floats can be negatives.
+    1: """
+       
+    1: import re
+    1: import math
+    1: import shlex
+    1: import string
+       
+    1: from decimal import Decimal
+       
+    1: __version__ = '1.0'
+       __all__ = [
+    1:     'UnsupportedToken',
+    1:     'UnsupportedOperation',
+    1:     'InvalidSyntax',
+    1:     'SimpleEval',
+    1:     'simple_eval',
+       ]
+       
+       #-------------------------------------------------------------------------------
+       # Constants
+    1: OPERATORS = ["-", "+", "/", "*", "<", ">", "|", "&"]
+       
+    1: TOKEN_TYPE_NUM = 0
+    1: TOKEN_TYPE_OP  = 1
+    1: TOKEN_TYPE_VAR = 2
+       
+       #-------------------------------------------------------------------------------
+    1: def is_number(token):
+105416:   ret = False
+105416:   nums = re.findall("\d*\.\d+|\d+", token)
+105416:   if len(nums) > 0:
+105416:     try:
+105416:       num = Decimal(nums[0])
+105416:       ret = True
+           except:
+             pass
+       
+105416:   return ret
+       
+       #-------------------------------------------------------------------------------
+    2: class UnsupportedToken(Exception):
+    1:   pass
+       
+       #-------------------------------------------------------------------------------
+    2: class UnsupportedOperation(Exception):
+    1:   pass
+       
+       #-------------------------------------------------------------------------------
+    2: class InvalidSyntax(Exception):
+    1:   pass
+       
+       #-------------------------------------------------------------------------------
+    2: class SimpleEval:
+         """ A simple C expressions evaluator.
+         
+         It was created with the aim of calculating basic C expressions instead of using
+         the dangerous built-in 'eval' function.
+    1:   """
+       
+    1:   def invalid_token(self, token):
+           """ An invalid token was found.
+           
+           Valid tokens are numbers (integers and decimals), C operators,
+           well as the '<' and '>' characters, as well as optionally variable names."""
+           raise UnsupportedToken("Unknown or unsupported token %s" % repr(token))
+       
+    1:   def invalid_operation(self, token):
+           """ An invalid operation was found.
+           
+           The only operations supported are the following: '+', '-', '*', '/', '<<',
+           '>>' and '**'."""
+           raise UnsupportedOperation("Unknown or unsupported operation %s" % repr(token))
+       
+    1:   def invalid_syntax(self):
+           """ The syntax is invalid.
+           
+           This error may happen if an operator is the last or very first token as well
+           as if a variable or number is found right after another one. """
+           raise InvalidSyntax()
+       
+    1:   def calculate(self, val1, op, val2):
+           """ Calculate the result of an atomic C operation. """
+           result = val1
+           if op == "+":
+             result += val2
+           elif op == "-":
+             result -= val2
+           elif op == "/":
+             result /= val2
+           elif op == "*":
+             result *= val2
+           elif op == "<<":
+             tmp1 = long(val1)
+             tmp2 = long(val2)
+             tmp1 <<= tmp2
+             result = Decimal(tmp1)
+           elif op == ">>":
+             tmp1 = long(val1)
+             tmp2 = long(val2)
+             tmp1 >>= tmp2
+             result = Decimal(tmp1)
+           elif op == "|":
+             tmp1 = long(val1)
+             tmp2 = long(val2)
+             tmp1 |= tmp2
+             result = Decimal(tmp1)
+           elif op == "&":
+             tmp1 = long(val1)
+             tmp2 = long(val2)
+             tmp1 &= tmp2
+             result = Decimal(tmp1)
+           elif op == "**":
+             result **= val2
+           else:
+             self.invalid_operation(op)
+       
+           return result
+       
+    1:   def add_basic_names(self, names):
+           """ Add the constants 'pi' and 'e'.
+           
+           Add the aforementioned constants so they are available for expressions."""
+105416:     symbols = {"pi":math.pi, "e":math.e}
+316248:     for symbol in symbols:
+210832:       if symbol not in names:
+    2:         names[symbol] = Decimal(symbols[symbol])
+105416:     return names
+       
+    1:   def get_number(self, token):
+105416:     strips = ["L", "U"]
+316248:     for strip in strips:
+210832:       if token.endswith(strip):
+ 1967:         token = token.strip(strip)
+       
+105416:     if token.startswith("0x"):
+ 7147:       token = long(token, 16)
+98269:     elif token[0] == "0" and len(token) > 1 and token.find(".") == -1:
+  273:       token = long(token, 8)
+105416:     return Decimal(token)
+       
+    1:   def eval(self, expr, names = {}):
+           """ Evaluate the given expression and return the calculated value.
+           
+           Evaluate the expression 'expr', optionally using variable names from 'names'
+           in the expression, and return the calculated value. """
+       
+105416:     names = self.add_basic_names(names)
+       
+105416:     lex = shlex.shlex(expr)
+105416:     lex.wordchars += ".-"
+105416:     lex.whitespace += "()"
+105416:     tokens = list(lex)
+       
+105416:     op = None
+105416:     result = None
+105416:     iterations = 0
+210832:     for token in tokens:
+105416:       iterations += 1
+105416:       token_type = None
+105416:       if is_number(token):
+105416:         token_type = TOKEN_TYPE_NUM
+105416:         token = self.get_number(token)
+             elif token in OPERATORS:
+               token_type = TOKEN_TYPE_OP
+             else:
+               if token in names:
+                 token = Decimal(names[token])
+                 token_type = TOKEN_TYPE_NUM
+               else:
+                 self.invalid_token(token)
+       
+105416:       if token_type == TOKEN_TYPE_NUM:
+105416:         if op is None:
+105416:           if iterations > 1:
+                   self.invalid_syntax()
+       
+105416:           result = Decimal(token)
+105416:           continue
+       
+               result = self.calculate(result, op, token)
+               op = None
+             elif token_type == TOKEN_TYPE_OP:
+               if result is None:
+                 self.invalid_syntax()
+       
+               if op is None:
+                 op = token
+                 continue
+       
+               op += token
+               if op not in ["<<", ">>", "**"]:
+                 self.invalid_token(op)
+           
+105416:     if op is not None:
+             self.invalid_syntax()
+       
+105416:     return result
+       
+       #-------------------------------------------------------------------------------
+    1: def simple_eval(expr, names = {}):
+         """ Evaluate the given expression and return the calculated value.
+           
+         Evaluate the expression 'expr', optionally using variable names from 'names'
+         in the expression, and return the calculated value. """
+         
+105416:   evaluator = SimpleEval()
+105416:   return evaluator.eval(expr, names = names)
+       
+       #-------------------------------------------------------------------------------
+    1: def main():
+       
+         try:
+           import readline
+         except:
+           pass
+       
+         exit_cmds = ["q", "exit", "quit"]
+         print "Simple C expressions calculator"
+         print "Use %s to exit" % ", ".join(map(repr, exit_cmds))
+         print
+       
+         evaluator = SimpleEval()
+         while 1:
+           cmd = raw_input("C expr> ")
+           if cmd.lower() in exit_cmds:
+             break
+           elif cmd == "":
+             continue
+       
+           print evaluator.eval(cmd)
+       
+    1: if __name__ == "__main__":
+         main()
+       
