@@ -167,10 +167,10 @@ class CBaseExporter:
                           switchs_json text,
                           calls integer,
                           externals integer,
-                          callees text)"""
+                          callees text,
+                          source text)"""
     cur.execute(sql)
 
-    # Unused yet
     sql = """create table if not exists callgraph(
                           id integer not null primary key,
                           caller text,
@@ -178,7 +178,8 @@ class CBaseExporter:
                           )"""
     cur.execute(sql)
 
-    sql = """ create unique index idx_callgraph on callgraph (name1, name2) """
+    sql = """ create unique index idx_callgraph on callgraph (caller, callee) """
+    cur.execute(sql)
     cur.close()
     return self.db
 
@@ -254,8 +255,8 @@ class CBaseExporter:
             cur2.execute(sql, (func_name, callee))
             cur2.close()
           except:
-            print str(sys.exc_info()[1])
-            raw_input("?")
+            # Ignore unique constraint violations
+            pass
 
     cur.close()
 
@@ -292,6 +293,7 @@ class CBaseExporter:
           msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
           export_log(msg)
           self.fatals += 1
+          raise
 
     self.build_callgraph()
 

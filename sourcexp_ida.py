@@ -120,6 +120,17 @@ class CBinaryToSourceExporter:
                           calls integer,
                           externals integer)"""
     cur.execute(sql)
+    
+    sql = """create table if not exists callgraph(
+                          id integer not null primary key,
+                          caller text,
+                          callee text
+                          )"""
+    cur.execute(sql)
+
+    sql = """ create unique index idx_callgraph on callgraph (caller, callee) """
+    cur.execute(sql)
+
     cur.close()
 
   def parse_operands(self, ea, constants, externals):
@@ -290,6 +301,13 @@ class CBinaryToSourceExporter:
             len(constants), json.dumps(list(constants)), loops, len(switches),
             json.dumps(str(switches)), len(calls), len(list(externals)))
     rowid = cur.execute(sql, args)
+    
+    sql = "insert into callgraph (caller, callee) values (?, ?)"
+    for callee in calls:
+      # Ignore library functions
+      if not callee.startswith("."):
+        cur.execute(sql, (func_name, callee))
+
     cur.close()
 
   def export(self, filename=None):

@@ -175,7 +175,6 @@ class CCLangVisitor:
     self.switches.append([len(cases) + default, list(cases)])
 
   def visit_BINARY_OPERATOR(self, cursor):
-    print cursor, cursor.kind, repr(cursor.spelling)
     for token in cursor.get_tokens():
       if token.kind == TokenKind.PUNCTUATION:
         if token.spelling == "*":
@@ -241,6 +240,32 @@ class CLangParser:
 
 #-------------------------------------------------------------------------------
 class CClangExporter(CBaseExporter):
+  def __init__(self, cfg_file):
+    CBaseExporter.__init__(self, cfg_file)
+    self.source_cache = {}
+
+  def get_function_source(self, cursor):
+    start_loc = cursor.location
+    tokens = list(cursor.get_tokens())
+    if len(tokens) == 0:
+      return None
+
+    last_loc = tokens[len(tokens) - 1].location
+
+    filename = start_loc.file.name
+    if filename not in self.source_cache:
+      self.source_cache[filename] = open(filename, "rb").readlines()
+
+    start_line, end_line = start_loc.line, last_loc.line
+    try:
+      source = "".join(self.source_cache[filename][start_line-1:end_line])
+    except:
+      print "ERROR:", str(sys.exc_info()[1])
+      print start_line, end_line
+      raw_input("?")
+
+    return source
+
   def export_one(self, filename, args, is_c):
     parser = CLangParser()
     parser.parse(filename, args)
@@ -264,28 +289,26 @@ class CClangExporter(CBaseExporter):
             if token.spelling == "extern":
               continue
 
-          print "Parsing function %s in %s" % (element.spelling, element.location)
-          dump_ast(element)
-
           obj = CCLangVisitor(element.spelling)
           parser.visitor(obj, cursor=element)
 
           prototype = ""
           prototype2 = ""
+          source = self.get_function_source(element)
 
           sql = """insert into functions(
                                  ea, name, prototype, prototype2, conditions,
                                  constants, constants_json, loops, switchs,
                                  switchs_json, calls, externals, filename,
-                                 callees)
+                                 callees, source)
                                values
                                  ((select count(ea)+1 from functions),
-                                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
           args = (obj.name, prototype, prototype2, obj.conditions,
                   len(obj.constants), json.dumps(list(obj.constants)),
                   obj.loops, len(obj.switches), json.dumps(str(obj.switches)),
                   len(obj.calls), len(obj.externals),
-                  filename, json.dumps(list(obj.calls)))
+                  filename, json.dumps(list(obj.calls)), source)
           cur.execute(sql, args)
       
       cur.execute("COMMIT")
