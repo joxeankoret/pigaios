@@ -92,12 +92,17 @@ class CCLangVisitor:
       if len(tokens) == 3:
         value = get_clean_number(tokens[2].spelling)
 
+      # Some error parsing partial source code were an enum member has been
+      # initialized to a macro that we know nothing about...
+      if type(value) is str:
+        return True
+
       self.enums[name] = value
       if len(tokens) == 1:
         value += 1
 
     return True
-  
+
   def visit_IF_STMT(self, cursor):
     #print "Visiting IF_STMT"
     # Perform some (fortunately) not too complex parsing of the IF_STMT as the
@@ -257,13 +262,7 @@ class CClangExporter(CBaseExporter):
       self.source_cache[filename] = open(filename, "rb").readlines()
 
     start_line, end_line = start_loc.line, last_loc.line
-    try:
-      source = "".join(self.source_cache[filename][start_line-1:end_line])
-    except:
-      print "ERROR:", str(sys.exc_info()[1])
-      print start_line, end_line
-      raw_input("?")
-
+    source = "".join(self.source_cache[filename][start_line-1:end_line])
     return source
 
   def export_one(self, filename, args, is_c):

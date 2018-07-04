@@ -20,7 +20,7 @@ except:
 
 #-------------------------------------------------------------------------------
 CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp"]
-COLOR_SUBSTRS = {"CC ":Fore.GREEN,
+COLOR_SUBSTRS  = {"CC ":Fore.GREEN,
                  "CXX ":Fore.GREEN, 
                  " warning:":Fore.RED, " error:":Fore.RED,
                  " fatal:":Fore.RED}
@@ -92,7 +92,7 @@ def get_clean_number(value):
 
   if value.startswith("0x"):
     value = int(value, 16)
-  else:
+  elif value.isdigit():
     value = int(value)
 
   return value

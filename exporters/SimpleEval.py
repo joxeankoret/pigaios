@@ -143,7 +143,7 @@ class SimpleEval:
     return names
 
   def get_number(self, token):
-    strips = ["L", "U", "u"]
+    strips = ["L", "l", "U", "u"]
     for strip in strips:
       if token.endswith(strip):
         token = token.strip(strip)

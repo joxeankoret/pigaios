@@ -89,7 +89,7 @@ class CBinaryToSourceExporter:
 
   def create_database(self, sqlite_db = None):
     if sqlite_db is None:
-      sqlite_db = os.path.splitext(GetIdbPath())[0] + ".sqlite"
+      sqlite_db = os.path.splitext(GetIdbPath())[0] + "-src.sqlite"
 
     if os.path.exists(sqlite_db):
       log("Removing previous database...")
@@ -120,7 +120,7 @@ class CBinaryToSourceExporter:
                           calls integer,
                           externals integer)"""
     cur.execute(sql)
-    
+
     sql = """create table if not exists callgraph(
                           id integer not null primary key,
                           caller text,
@@ -268,7 +268,8 @@ class CBinaryToSourceExporter:
     try:
       strongly_connected = strongly_connected_components(bb_relations)
     except:
-      raise
+      print "Exception:", str(sys.exc_info()[1])
+      return False
 
     # ...and get the number of loops out of it
     for sc in strongly_connected:
