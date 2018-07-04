@@ -344,20 +344,8 @@ class CBinaryToSourceImporter:
       elif field.endswith("_json"):
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
-        
-        # It will compare whole strings but will not match substrings!
-        if False:
-          max_score = max(len(src_json), len(bin_json))
-          sub_score = 0
-          for src_key in src_json:
-            for bin_key in bin_json:
-              if bin_key == src_key:
-                sub_score += 1
-          
-          score += (sub_score * 1.0) / max_score
-        else:
-          sub_score = quick_ratio(src_json, bin_json)
-          score += sub_score
+        sub_score = quick_ratio(src_json, bin_json)
+        score += sub_score
 
     score = (score * 1.0) / (len(fields) - 1)
 
