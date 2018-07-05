@@ -235,28 +235,27 @@ class CBaseExporter:
     export_log("[+] Building the callgraph...")
     functions_cache = {}
     cur = self.db.cursor()
-    sql = "select ea, name, callees from functions where calls > 0"
+    sql = "select id, name, callees from functions where calls > 0"
     cur.execute(sql)
     for row in list(cur.fetchall()):
-      func_ea = row[0]
-      func_name = row[1]
+      func_id = row[0]
       callees = json.loads(row[2])
       for callee in callees:
         if callee == "":
           continue
 
-        sql = "select count(*) from functions where name = ?"
+        sql = "select id from functions where name = ?"
         cur.execute(sql, (callee,))
         row = cur.fetchone()
-        if row[0] > 0:
+        if row is not None:
           cur2 = self.db.cursor()
           sql = "insert into callgraph (caller, callee) values (?, ?)"
           try:
-            cur2.execute(sql, (func_name, callee))
+            cur2.execute(sql, (str(func_id), str(row[0])))
             cur2.close()
           except:
             # Ignore unique constraint violations
-            pass
+            print "build_callgraph():", str(sys.exc_info()[1])
 
     cur.close()
 

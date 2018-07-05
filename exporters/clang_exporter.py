@@ -250,19 +250,15 @@ class CClangExporter(CBaseExporter):
     self.source_cache = {}
 
   def get_function_source(self, cursor):
+    start_line = cursor.extent.start.line
+    end_line   = cursor.extent.end.line
+
     start_loc = cursor.location
-    tokens = list(cursor.get_tokens())
-    if len(tokens) == 0:
-      return None
-
-    last_loc = tokens[len(tokens) - 1].location
-
     filename = start_loc.file.name
     if filename not in self.source_cache:
       self.source_cache[filename] = open(filename, "rb").readlines()
 
-    start_line, end_line = start_loc.line, last_loc.line
-    source = "".join(self.source_cache[filename][start_line-1:end_line])
+    source = "".join(self.source_cache[filename][start_line:end_line])
     return source
 
   def export_one(self, filename, args, is_c):
@@ -294,6 +290,8 @@ class CClangExporter(CBaseExporter):
           prototype = ""
           prototype2 = ""
           source = self.get_function_source(element)
+          if source is None or source == "":
+            continue
 
           sql = """insert into functions(
                                  ea, name, prototype, prototype2, conditions,

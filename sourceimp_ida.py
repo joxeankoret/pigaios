@@ -16,6 +16,10 @@ from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
 from sourcexp_ida import log, CBinaryToSourceExporter
 
 #-------------------------------------------------------------------------------
+COMPARE_FIELDS = ["name", "conditions", "constants", "constants_json", "loops",
+                  "switchs", "switchs_json", "calls", "externals"]
+
+#-------------------------------------------------------------------------------
 def log(msg):
   Message("[%s] %s\n" % (time.asctime(), msg))
 
@@ -32,15 +36,17 @@ def quick_ratio(buf1, buf2):
 
 #-------------------------------------------------------------------------------
 def indent_source(src):
-  #Another option: clang-format -style=Google
   global indent_cmd
 
-  p = Popen(indent_cmd, stdout=PIPE, stdin=PIPE, stderr=STDOUT)
-  indenter = p.communicate(input=src)[0]
-  tmp = indenter.decode()
-  if tmp != "" and tmp is not None:
-    return tmp
-  return src
+  try:
+    p = Popen(indent_cmd, stdout=PIPE, stdin=PIPE, stderr=STDOUT)
+    indenter = p.communicate(input=src)[0]
+    tmp = indenter.decode()
+    if tmp != "" and tmp is not None:
+      tmp = tmp.replace("<", "&lt;").replace(">", "&gt;")
+      return tmp
+  except:
+    return src.replace("<", "&lt;").replace(">", "&gt;")
 
 #-----------------------------------------------------------------------
 class CSrcDiffDialog(Form):
@@ -199,7 +205,7 @@ class CHtmlDiff:
 class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches):
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 6], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 2], ["Heuristic", 20], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 4], ["Heuristic", 20], ]
     Choose2.__init__(self, title, columns, Choose2.CH_MULTI)
     self.n = 0
     self.icon = -1
@@ -325,9 +331,7 @@ class CBinaryToSourceImporter:
     return first_line
 
   def compare_functions(self, src_id, bin_id):
-    fields = ["name", "conditions", "constants", "constants_json", "loops",
-              "switchs", "switchs_json", "calls", "externals"]
-
+    fields = COMPARE_FIELDS
     cur = self.db.cursor()
     sql = "select %s from functions where id = ?" % ",".join(fields)
     cur.execute(sql, (bin_id,))
@@ -336,6 +340,7 @@ class CBinaryToSourceImporter:
     sql = "select %s from src.functions where id = ?" % ",".join(fields)
     cur.execute(sql, (src_id,))
     src_row = cur.fetchone()
+    cur.close()
 
     score = 0
     for field in fields:
@@ -347,9 +352,7 @@ class CBinaryToSourceImporter:
         sub_score = quick_ratio(src_json, bin_json)
         score += sub_score
 
-    score = (score * 1.0) / (len(fields) - 1)
-
-    cur.close()
+    score = (score * 1.0) / (len(fields))
     return score
 
   def find_initial_rows(self):
@@ -391,40 +394,157 @@ class CBinaryToSourceImporter:
       match_id = row[2]
       bin_id = row[3]
       score = self.compare_functions(match_id, bin_id)
-      self.best_matches[match_id] = (func_ea, match_name, "Attributes matching", score)
+      self.add_match(match_id, func_ea, match_name, "Attributes matching", score)
+
+    cur.close()
+
+  def add_match(self, match_id, func_ea, match_name, heur, score):
+    for key in self.best_matches:
+      tmp_func_ea, tmp_match_name, tmp_heur, tmp_score = self.best_matches[key]
+      if tmp_func_ea == func_ea:
+        if score >= tmp_score:
+          del self.best_matches[key]
+        break
+      elif key == match_id:
+        if score >= tmp_score:
+          del self.best_matches[key]
+        break
+
+    self.best_matches[match_id] = (func_ea, match_name, heur, score)
+
+  def get_binary_func_id(self, ea):
+    cur = self.db.cursor()
+    func_id = None
+    sql = """select id
+               from functions
+              where ea = ?
+                and conditions + constants + loops + switchs + calls + externals > 1"""
+    cur.execute(sql, (ea, ))
+    row = cur.fetchone()
+    if row is not None:
+      func_id = row["id"]
+    cur.close()
+    return func_id
+
+  def get_source_func_name(self, id):
+    cur = self.db.cursor()
+    func_name = None
+    sql = "select name from src.functions where id = ?"
+    cur.execute(sql, (id, ))
+    row = cur.fetchone()
+    if row is not None:
+      func_name = row["name"]
+    cur.close()
+    return func_name
+
+  def get_source_callees(self, src_id):
+    cur = self.db.cursor()
+    sql = "select callee from src.callgraph where caller = ?"
+    cur.execute(sql, (src_id, ))
+    src_rows = cur.fetchall()
+    cur.close()
+    return src_rows
+
+  def get_binary_callees(self, bin_id):
+    cur = self.db.cursor()
+    sql = "select callee from callgraph where caller = ?"
+    cur.execute(sql, (bin_id, ))
+    bin_rows = cur.fetchall()
+    cur.close()
+    return bin_rows
+
+  def find_one_callgraph_match(self, src_id, bin_ea, min_level):
+    cur = self.db.cursor()
+    sql = "select * from functions where ea = ?"
+    cur.execute(sql, (str(bin_ea), ))
+    row = cur.fetchone()
+    if row is not None:
+      bin_id = row["id"]
+      src_rows = list(self.get_source_callees(src_id))
+      if src_rows is not None and len(src_rows) > 0:
+        bin_rows = list(self.get_binary_callees(bin_ea))
+        if bin_rows is not None and len(bin_rows) > 0:
+          for src_row in src_rows:
+            for bin_row in bin_rows:
+              curr_bin_id = self.get_binary_func_id(bin_row["callee"])
+              if not curr_bin_id:
+                continue
+
+              score = self.compare_functions(src_row["callee"], curr_bin_id)
+              if score >= min_level:
+                func_name = self.get_source_func_name(src_row["callee"])
+                self.add_match(long(src_row["callee"]), bin_row["callee"], func_name, "Callgraph match", score)
 
     cur.close()
 
   def find_callgraph_matches(self):
-    log("Finding callgraph matches starting from:")
+    log("Finding callgraph matches...")
 
     cur = self.db.cursor()
-    # Iterate through the best matches we first found.
-    # NOTES: The 'match_id' is the id of the function in the source code.
-    for match_id in self.best_matches:
-      sql = "select caller from src.callgraph where callee = ?"
+    sql = "select caller from src.callgraph where callee = ?"
 
-      # 'ea' is the address in the binary but 'bin_caller' is the name of the
-      # function in the source code
-      ea, bin_caller, heur, score = self.best_matches[match_id]
-      cur.execute(sql, (bin_caller, ))
-      bin_caller_rows = cur.fetchall()
+    i = 0
+    while 1:
+      i += 1
+      log("Iteration %d..." % i)
+      total = len(self.best_matches)
 
-      # Now, get the function's data in the *binary*
-      sql = "select * from functions where ea = ?"
-      cur.execute(sql, (ea, ))
-      row = cur.fetchone()
+      # Iterate through the best matches we first found.
+      # NOTES: The 'match_id' is the id of the function in the source code.
+      for match_id in list(self.best_matches):
+        # 'ea' is the address in the binary but 'bin_caller' is the name of the
+        # function in the source code
+        if match_id in self.best_matches:
+          ea, bin_caller, heur, score = self.best_matches[match_id]
+          self.find_one_callgraph_match(match_id, ea, 0.5)
 
-      # In 'row' we have the data for the function in the binary
-      pass
+      if len(self.best_matches) == total:
+        break
 
     cur.close()
+
+  def choose_best_matches(self):
+    bin_d = {}
+    src_d = {}
+    for src_id in list(self.best_matches):
+      if src_id not in self.best_matches:
+        continue
+
+      ea, func, heur, score = self.best_matches[src_id]
+      if src_id not in src_d:
+        src_d[src_id] = (ea, score)
+        print "Initial source match for", src_id, hex(long(ea)), score
+      else:
+        old_ea, old_score = src_d[src_id]
+        if score > old_score:
+          print "Found NEW source best match for", src_id, hex(long(ea)), score
+          src_d[src_id] = (ea, score)
+        else:
+          del self.best_matches[src_id]
+
+      if ea not in bin_d:
+        bin_d[ea] = (src_id, score)
+        print "Initial binary match for", src_id, hex(long(ea)), score
+      else:
+        old_src_id, old_score = bin_d[ea]
+        if score > old_score:
+          print "Found NEW binary best match for", src_id, hex(long(ea)), score
+          bin_d[ea] = (src_id, score)
+        else:
+          del self.best_matches[src_id]
+
+    for src_id in list(self.best_matches):
+      ea, func, heur, score = self.best_matches[src_id]
+      tmp_id, score = bin_d[ea]
+      if tmp_id != src_id:
+        del self.best_matches[src_id]
 
   def import_src(self, src_db):
     self.db.execute('attach "%s" as src' % src_db)
 
     self.find_initial_rows()
     self.find_callgraph_matches()
+    self.choose_best_matches()
 
     c = CDiffChooser(self, "Matched functions", self.best_matches)
     c.show()

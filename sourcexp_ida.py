@@ -257,12 +257,7 @@ class CBinaryToSourceExporter:
             if func_obj is not None:
               if func_obj.startEA != func.startEA:
                 tmp_ea = xrefs[0]
-                tmp_name = GetFunctionName(tmp_ea)
-                if tmp_name is None:
-                  tmp_name = self.names[tmp_ea]
-
-                externals.add(tmp_name)
-                calls.add(tmp_name)
+                calls.add(tmp_ea)
 
     # Calculate the strongly connected components
     try:
@@ -305,9 +300,7 @@ class CBinaryToSourceExporter:
     
     sql = "insert into callgraph (caller, callee) values (?, ?)"
     for callee in calls:
-      # Ignore library functions
-      if not callee.startswith("."):
-        cur.execute(sql, (func_name, callee))
+      cur.execute(sql, (f, callee))
 
     cur.close()
 
