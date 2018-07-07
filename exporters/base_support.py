@@ -168,7 +168,9 @@ class CBaseExporter:
                           calls integer,
                           externals integer,
                           callees text,
-                          source text)"""
+                          source text,
+                          recursive integer,
+                          indirect integer)"""
     cur.execute(sql)
 
     sql = """create table if not exists callgraph(
@@ -232,7 +234,7 @@ class CBaseExporter:
     pool.map(self.do_export_one, pool_args)
 
   def build_callgraph(self):
-    export_log("[+] Building the callgraph...")
+    export_log("[+] Building the callgraphs...")
     functions_cache = {}
     cur = self.db.cursor()
     sql = "select id, name, callees from functions where calls > 0"

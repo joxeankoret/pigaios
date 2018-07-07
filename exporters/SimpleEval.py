@@ -143,15 +143,19 @@ class SimpleEval:
     return names
 
   def get_number(self, token):
-    strips = ["L", "l", "U", "u"]
+    strips = ["L", "l", "U", "u", "L", "l", "U", "u"]
     for strip in strips:
       if token.endswith(strip):
         token = token.strip(strip)
+
+    if type(token) is str:
+      token = token.lower()
 
     if token.startswith("0x"):
       token = long(token, 16)
     elif token[0] == "0" and len(token) == 1 and token.find(".") == -1:
       token = long(token, 8)
+
     return Decimal(token)
 
   def eval(self, expr, names = {}):

@@ -45,6 +45,8 @@ class CCLangVisitor:
     self.switches = []
     self.constants = set()
     self.externals = set()
+    self.indirects = []
+    self.recursive = False
 
     self.mul = False
     self.div = False
@@ -135,6 +137,16 @@ class CCLangVisitor:
 
   def visit_CALL_EXPR(self, cursor):
     #print "Visiting CALL_EXPR"
+    if cursor.spelling == self.name:
+      self.recursive = True
+
+    token = next(cursor.get_tokens(), None)
+    if token is not None:
+      token = token.spelling
+      if token != "" and token is not None:
+        if token != cursor.spelling:
+          self.indirects.append(cursor.spelling)
+
     self.calls.add(cursor.spelling)
 
   def visit_loop(self, cursor):
@@ -149,7 +161,7 @@ class CCLangVisitor:
 
   def visit_DO_STMT(self, cursor):
     self.visit_loop(cursor)
-  
+
   def visit_SWITCH_STMT(self, cursor):
     #print "Visiting SWITCH_STMT"
     # As always, the easiest way to get the cases and values from a SWITCH_STMT
@@ -258,7 +270,7 @@ class CClangExporter(CBaseExporter):
     if filename not in self.source_cache:
       self.source_cache[filename] = open(filename, "rb").readlines()
 
-    source = "".join(self.source_cache[filename][start_line:end_line])
+    source = "".join(self.source_cache[filename][start_line-1:end_line])
     return source
 
   def export_one(self, filename, args, is_c):
@@ -297,16 +309,17 @@ class CClangExporter(CBaseExporter):
                                  ea, name, prototype, prototype2, conditions,
                                  constants, constants_json, loops, switchs,
                                  switchs_json, calls, externals, filename,
-                                 callees, source)
+                                 callees, source, recursive, indirect)
                                values
                                  ((select count(ea)+1 from functions),
-                                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                  ?, ?)"""
           args = (obj.name, prototype, prototype2, obj.conditions,
                   len(obj.constants), json.dumps(list(obj.constants)),
                   obj.loops, len(obj.switches), json.dumps(str(obj.switches)),
                   len(obj.calls), len(obj.externals),
-                  filename, json.dumps(list(obj.calls)), source)
+                  filename, json.dumps(list(obj.calls)), source, obj.recursive,
+                  len(obj.indirects))
           cur.execute(sql, args)
-      
-      cur.execute("COMMIT")
 
+      cur.execute("COMMIT")

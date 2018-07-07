@@ -13,7 +13,74 @@ from idautils import *
 from others.tarjan_sort import strongly_connected_components
 
 #-------------------------------------------------------------------------------
-BANNED_FUNCTIONS = [".__stack_chk_fail"]
+BANNED_FUNCTIONS = ['__asprintf_chk',
+ '__builtin___fprintf_chk',
+ '__builtin___memccpy_chk',
+ '__builtin___memcpy_chk',
+ '__builtin___memmove_chk',
+ '__builtin___mempcpy_chk',
+ '__builtin___memset_chk',
+ '__builtin___printf_chk',
+ '__builtin___snprintf_chk',
+ '__builtin___sprintf_chk',
+ '__builtin___stpcpy_chk',
+ '__builtin___stpncpy_chk',
+ '__builtin___strcat_chk',
+ '__builtin___strcpy_chk',
+ '__builtin___strncat_chk',
+ '__builtin___strncpy_chk',
+ '__builtin___vfprintf_chk',
+ '__builtin___vprintf_chk',
+ '__builtin___vsnprintf_chk',
+ '__builtin___vsprintf_chk',
+ '__dprintf_chk',
+ '__fdelt_chk',
+ '__fgets_chk',
+ '__fprintf_chk',
+ '__fread_chk',
+ '__fread_unlocked_chk',
+ '__gethostname_chk',
+ '__longjmp_chk',
+ '__memcpy_chk',
+ '__memmove_chk',
+ '__mempcpy_chk',
+ '__memset_chk',
+ '__obstack_printf_chk',
+ '__poll_chk',
+ '__ppoll_chk',
+ '__pread64_chk',
+ '__pread_chk',
+ '__printf_chk',
+ '__read_chk',
+ '__realpath_chk',
+ '__recv_chk',
+ '__recvfrom_chk',
+ '__snprintf_chk',
+ '__sprintf_chk',
+ '__stack_chk_fail',
+ '__stpcpy_chk',
+ '__strcat_chk',
+ '__strcpy_chk',
+ '__strncat_chk',
+ '__strncpy_chk',
+ '__swprintf_chk',
+ '__syslog_chk',
+ '__vasprintf_chk',
+ '__vdprintf_chk',
+ '__vfprintf_chk',
+ '__vfwprintf_chk',
+ '__vprintf_chk',
+ '__vsnprintf_chk',
+ '__vsprintf_chk',
+ '__vswprintf_chk',
+ '__vsyslog_chk',
+ '__wcscat_chk',
+ '__wcscpy_chk',
+ '__wcsncpy_chk',
+ '__wcstombs_chk',
+ '__wctomb_chk',
+ '__wmemcpy_chk',
+ '__wprintf_chk']
 
 #-------------------------------------------------------------------------------
 def log(msg):
@@ -38,6 +105,9 @@ def diaphora_decode(ea):
 #-------------------------------------------------------------------------------
 def is_conditional_branch_or_jump(ea):
   mnem = GetMnem(ea)
+  if not mnem or mnem == "":
+    return False
+
   c = mnem[0]
   if c in ["j", "b"] and mnem not in ["jmp", "b"]:
     return True
@@ -118,7 +188,9 @@ class CBinaryToSourceExporter:
                           switchs integer,
                           switchs_json text,
                           calls integer,
-                          externals integer)"""
+                          externals integer,
+                          recursive integer,
+                          indirects integer)"""
     cur.execute(sql)
 
     sql = """create table if not exists callgraph(
@@ -211,6 +283,8 @@ class CBinaryToSourceExporter:
     switches = []
     calls = set()
     loops = 0
+    recursive = False
+    indirects = 0
 
     # Variables required for calculations of previous ones
     bb_relations = {}
@@ -242,6 +316,9 @@ class CBinaryToSourceExporter:
         if is_cond:
           conditions += 1
 
+        if is_call_insn(ea) and len(list(CodeRefsFrom(ea, 0))) == 0:
+          indirects += 1
+
         # Get the constants
         constants, externals = self.parse_operands(ea, constants, externals)
 
@@ -249,15 +326,17 @@ class CBinaryToSourceExporter:
         switches = self.parse_switches(ea, switches)
 
         # Get the calls
-        # TODO: XXX: Filter out functions like ___stack_chk_fail
         xrefs = list(CodeRefsFrom(ea, 0))
         if len(xrefs) == 1:
-          if GetFunctionName(xrefs[0]) not in BANNED_FUNCTIONS:
+          tmp_func = GetFunctionName(xrefs[0])
+          if tmp_func not in BANNED_FUNCTIONS and ".%s" % tmp_func not in BANNED_FUNCTIONS:
             func_obj = get_func(xrefs[0])
             if func_obj is not None:
               if func_obj.startEA != func.startEA:
                 tmp_ea = xrefs[0]
                 calls.add(tmp_ea)
+              else:
+                recursive = True
 
     # Calculate the strongly connected components
     try:
@@ -273,7 +352,7 @@ class CBinaryToSourceExporter:
       else:
         if sc[0] in bb_relations and sc[0] in bb_relations[sc[0]]:
           loops += 1
-    
+
     if self.debug:
       print "Name        : %s" % func_name
       print "Prototype   : %s" % prototype
@@ -284,29 +363,34 @@ class CBinaryToSourceExporter:
       print "Calls       : %s" % len(calls)
       print "Loops       : %d" % loops
       print "Globals     : %d" % len(externals)
+      print "Recursive   : %d" % recursive
+      print "Indirects   : %d" % indirects
       print
 
     cur = self.db.cursor()
     sql = """insert into functions(
                          ea, name, prototype, prototype2, conditions,
                          constants, constants_json, loops, switchs,
-                         switchs_json, calls, externals
+                         switchs_json, calls, externals, recursive,
+                         indirects
                          )
-                         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
-    args = (f, func_name, prototype, prototype2, conditions,
+                         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+    args = (str(f), func_name, prototype, prototype2, conditions,
             len(constants), json.dumps(list(constants)), loops, len(switches),
-            json.dumps(str(switches)), len(calls), len(list(externals)))
+            json.dumps(str(switches)), len(calls), len(list(externals)),
+            recursive, int(indirects))
     rowid = cur.execute(sql, args)
-    
+
     sql = "insert into callgraph (caller, callee) values (?, ?)"
     for callee in calls:
-      cur.execute(sql, (f, callee))
+      cur.execute(sql, (str(f), str(callee)))
 
     cur.close()
 
   def export(self, filename=None):
     self.create_database(filename)
 
+    self.db.execute("PRAGMA synchronous = OFF")
     self.db.execute("BEGIN")
     try:
       show_wait_box("Exporting database...")

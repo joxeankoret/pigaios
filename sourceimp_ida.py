@@ -11,17 +11,20 @@ import sqlite3
 from subprocess import Popen, PIPE, STDOUT
 
 from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
-                    get_func, decompile, tag_remove)
+                    get_func, decompile, tag_remove, show_wait_box,
+                    hide_wait_box, replace_wait_box)
 
 from sourcexp_ida import log, CBinaryToSourceExporter
 
 #-------------------------------------------------------------------------------
 COMPARE_FIELDS = ["name", "conditions", "constants", "constants_json", "loops",
-                  "switchs", "switchs_json", "calls", "externals"]
+                  "switchs", "switchs_json", "calls", "externals", "recursive",
+                  "externals"]
 
 #-------------------------------------------------------------------------------
 def log(msg):
   Message("[%s] %s\n" % (time.asctime(), msg))
+  replace_wait_box(msg)
 
 #-----------------------------------------------------------------------
 def quick_ratio(buf1, buf2):
@@ -55,11 +58,16 @@ class CSrcDiffDialog(Form):
   Please select the path to the exported source code SQLite database to diff against the current
   binary database.
 
-  <#Select an exported source code SQLite database                                       #Database      :{iFileOpen}>
-  <#Enter the command line for indenting sources and pseudo-codes, leave in blank for ignoring it#Indent command:{iIndentCommand}>
+  <#Select an exported source code SQLite database                                               #Database           :{iFileOpen}>
+  <#Enter the command line for indenting sources and pseudo-codes, leave in blank for ignoring it#Indent command     :{iIndentCommand}>
+  <#Minimum ratio to consider a match good enough                                                #Calculations ratio :{iMinLevel}>
+  <#Minimum ratio for a match to be displayed                                                    #Display ratio      :{iMinDisplayLevel}>
 """
-    args = {'iFileOpen'     : Form.FileInput(open=True, swidth=45),
-            'iIndentCommand': Form.StringInput(swidth=45)}
+    args = {'iFileOpen'       : Form.FileInput(open=True, swidth=45),
+            'iIndentCommand'  : Form.StringInput(swidth=45),
+            'iMinLevel'       : Form.StringInput(swidth=10),
+            'iMinDisplayLevel': Form.StringInput(swidth=10)
+            }
     Form.__init__(self, s, args)
 
 #-------------------------------------------------------------------------------
@@ -205,7 +213,7 @@ class CHtmlDiff:
 class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches):
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 4], ["Heuristic", 20], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 14], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 20], ]
     Choose2.__init__(self, title, columns, Choose2.CH_MULTI)
     self.n = 0
     self.icon = -1
@@ -223,6 +231,10 @@ class CDiffChooser(Choose2):
       return False
 
     self.cmd_diff_c = self.AddCommand("Diff pseudo-code")
+
+  def OnGetLineAttr(self, n):
+    line = self.items[n]
+    return [0xFFFFFF, 0]
 
   def OnGetLine(self, n):
     return self.items[n]
@@ -281,7 +293,7 @@ class CDiffChooser(Choose2):
 class CBinaryToSourceImporter:
   def __init__(self):
     self.debug = False
-    self.db_filename = os.path.splitext(GetIdbPath())[0] + ".sqlite"
+    self.db_filename = os.path.splitext(GetIdbPath())[0] + "-src.sqlite"
     if not os.path.exists(self.db_filename):
       log("Exporting current database...")
       exporter = CBinaryToSourceExporter()
@@ -291,6 +303,8 @@ class CBinaryToSourceImporter:
     self.db.text_factory = str
     self.db.row_factory = sqlite3.Row
 
+    self.min_level = None
+    self.min_display_level = None
     self.pseudo = {}
     self.best_matches = {}
 
@@ -346,10 +360,25 @@ class CBinaryToSourceImporter:
     for field in fields:
       if src_row[field] == bin_row[field] and field.find("_json") == -1:
         score += 1
+      elif type(src_row[field]) in [int, long]:
+        max_val = max(src_row[field], bin_row[field])
+        min_val = min(src_row[field], bin_row[field])
+        if max_val > 0:
+          score += (min_val * 1.0) / (max_val * 1.0)
       elif field.endswith("_json"):
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
-        sub_score = quick_ratio(src_json, bin_json)
+        at_least_one_match = False
+        for src_key in src_json:
+          for src_bin in bin_json:
+            if src_key == src_bin:
+              at_least_one_match = True
+              break
+
+        sub_score = 0
+        if at_least_one_match:
+          sub_score = quick_ratio(src_json, bin_json)
+
         score += sub_score
 
     score = (score * 1.0) / (len(fields))
@@ -360,7 +389,7 @@ class CBinaryToSourceImporter:
     sql = """ select bin.ea, src.name, src.id, bin.id
                 from functions bin,
                      src.functions src
-               where bin.conditions between src.conditions and src.conditions + 1
+               where bin.conditions between src.conditions and src.conditions + 3
                  and bin.constants = src.constants
                  and bin.constants_json = src.constants_json
                  and (select count(*) from src.functions x where x.constants_json = src.constants_json) < %d
@@ -373,42 +402,43 @@ class CBinaryToSourceImporter:
     row = cur.fetchone()
     total = row[0]
 
+    log("Finding best matches...")
     for i in range(1, 6):
       # Constants must appear less than i% of the time in the sources
-      cur.execute(sql % (total * i/ 100))
+      val = (total * i / 100)
+      cur.execute(sql % val)
       rows = cur.fetchall()
-      log("Finding best matches...")
       if len(rows) > 0:
         break
 
-    matches_count = {}
-    for row in rows:
-      try:
-        matches_count[row[1]] += 1
-      except:
-        matches_count[row[1]] = 1
+    size = len(rows)
+    if size > 0:
+      matches_count = {}
+      for row in rows:
+        try:
+          matches_count[row[1]] += 1
+        except:
+          matches_count[row[1]] = 1
 
-    for row in rows:
-      func_ea = long(row[0])
-      match_name = row[1]
-      match_id = row[2]
-      bin_id = row[3]
-      score = self.compare_functions(match_id, bin_id)
-      self.add_match(match_id, func_ea, match_name, "Attributes matching", score)
+      for row in rows:
+        func_ea = long(row[0])
+        match_name = row[1]
+        match_id = row[2]
+        bin_id = row[3]
+        score = self.compare_functions(match_id, bin_id)
+        self.add_match(match_id, func_ea, match_name, "Attributes matching", score)
 
     cur.close()
+    return size != 0
 
   def add_match(self, match_id, func_ea, match_name, heur, score):
-    for key in self.best_matches:
-      tmp_func_ea, tmp_match_name, tmp_heur, tmp_score = self.best_matches[key]
-      if tmp_func_ea == func_ea:
-        if score >= tmp_score:
-          del self.best_matches[key]
-        break
-      elif key == match_id:
-        if score >= tmp_score:
-          del self.best_matches[key]
-        break
+    if score < self.min_level:
+      return
+
+    if match_id in self.best_matches:
+      old_ea, old_name, old_heur, old_score = self.best_matches[match_id]
+      if old_score >= score:
+        return
 
     self.best_matches[match_id] = (func_ea, match_name, heur, score)
 
@@ -448,60 +478,89 @@ class CBinaryToSourceImporter:
   def get_binary_callees(self, bin_id):
     cur = self.db.cursor()
     sql = "select callee from callgraph where caller = ?"
-    cur.execute(sql, (bin_id, ))
+    cur.execute(sql, (str(bin_id), ))
     bin_rows = cur.fetchall()
     cur.close()
     return bin_rows
 
-  def find_one_callgraph_match(self, src_id, bin_ea, min_level):
+  def get_source_callers(self, src_id):
+    cur = self.db.cursor()
+    sql = "select caller from src.callgraph where callee = ?"
+    cur.execute(sql, (src_id, ))
+    src_rows = cur.fetchall()
+    cur.close()
+    return src_rows
+
+  def get_binary_callers(self, bin_id):
+    cur = self.db.cursor()
+    sql = "select caller from callgraph where callee = ?"
+    cur.execute(sql, (str(bin_id), ))
+    bin_rows = cur.fetchall()
+    cur.close()
+    return bin_rows
+
+  def get_binary_call_type(self, bin_id, call_type):
+    if call_type == "callee":
+      return self.get_binary_callees(bin_id)
+    return self.get_binary_callers(bin_id)
+
+  def get_source_call_type(self, bin_id, call_type):
+    if call_type == "callee":
+      return self.get_source_callees(bin_id)
+    return self.get_source_callers(bin_id)
+
+  def find_one_callgraph_match(self, src_id, bin_ea, min_level, call_type="callee"):
     cur = self.db.cursor()
     sql = "select * from functions where ea = ?"
     cur.execute(sql, (str(bin_ea), ))
     row = cur.fetchone()
     if row is not None:
       bin_id = row["id"]
-      src_rows = list(self.get_source_callees(src_id))
+      src_rows = list(self.get_source_call_type(src_id, call_type))
       if src_rows is not None and len(src_rows) > 0:
-        bin_rows = list(self.get_binary_callees(bin_ea))
+        bin_rows = list(self.get_binary_call_type(bin_ea, call_type))
         if bin_rows is not None and len(bin_rows) > 0:
           for src_row in src_rows:
             for bin_row in bin_rows:
-              curr_bin_id = self.get_binary_func_id(bin_row["callee"])
+              curr_bin_id = self.get_binary_func_id(bin_row[call_type])
               if not curr_bin_id:
                 continue
 
-              score = self.compare_functions(src_row["callee"], curr_bin_id)
+              score = self.compare_functions(src_row[call_type], curr_bin_id)
               if score >= min_level:
-                func_name = self.get_source_func_name(src_row["callee"])
-                self.add_match(long(src_row["callee"]), bin_row["callee"], func_name, "Callgraph match", score)
+                func_name = self.get_source_func_name(src_row[call_type])
+                self.add_match(long(src_row[call_type]), bin_row[call_type], func_name, "Callgraph match (%s)" % call_type, score)
 
     cur.close()
 
   def find_callgraph_matches(self):
     log("Finding callgraph matches...")
-
-    cur = self.db.cursor()
-    sql = "select caller from src.callgraph where callee = ?"
-
     i = 0
+    dones = set()
+    ea_dones = set()
     while 1:
       i += 1
-      log("Iteration %d..." % i)
+      log("Iteration %d, discovered a total of %d row(s)..." % (i, len(self.best_matches)))
       total = len(self.best_matches)
 
       # Iterate through the best matches we first found.
       # NOTES: The 'match_id' is the id of the function in the source code.
       for match_id in list(self.best_matches):
-        # 'ea' is the address in the binary but 'bin_caller' is the name of the
-        # function in the source code
+        if match_id in dones:
+          continue
+        dones.add(match_id)
+
         if match_id in self.best_matches:
           ea, bin_caller, heur, score = self.best_matches[match_id]
-          self.find_one_callgraph_match(match_id, ea, 0.5)
+          if ea in ea_dones:
+            continue
+          ea_dones.add(ea)
+
+          self.find_one_callgraph_match(match_id, ea, self.min_level, "callee")
+          self.find_one_callgraph_match(match_id, ea, self.min_level, "caller")
 
       if len(self.best_matches) == total:
         break
-
-    cur.close()
 
   def choose_best_matches(self):
     bin_d = {}
@@ -511,30 +570,33 @@ class CBinaryToSourceImporter:
         continue
 
       ea, func, heur, score = self.best_matches[src_id]
+      if score < self.min_display_level:
+        del self.best_matches[src_id]
+        continue
+
+      ea = str(ea)
       if src_id not in src_d:
         src_d[src_id] = (ea, score)
-        print "Initial source match for", src_id, hex(long(ea)), score
       else:
         old_ea, old_score = src_d[src_id]
+        old_ea = str(old_ea)
         if score > old_score:
-          print "Found NEW source best match for", src_id, hex(long(ea)), score
           src_d[src_id] = (ea, score)
         else:
           del self.best_matches[src_id]
 
       if ea not in bin_d:
         bin_d[ea] = (src_id, score)
-        print "Initial binary match for", src_id, hex(long(ea)), score
       else:
         old_src_id, old_score = bin_d[ea]
         if score > old_score:
-          print "Found NEW binary best match for", src_id, hex(long(ea)), score
           bin_d[ea] = (src_id, score)
         else:
           del self.best_matches[src_id]
 
     for src_id in list(self.best_matches):
       ea, func, heur, score = self.best_matches[src_id]
+      ea = str(ea)
       tmp_id, score = bin_d[ea]
       if tmp_id != src_id:
         del self.best_matches[src_id]
@@ -542,12 +604,14 @@ class CBinaryToSourceImporter:
   def import_src(self, src_db):
     self.db.execute('attach "%s" as src' % src_db)
 
-    self.find_initial_rows()
-    self.find_callgraph_matches()
-    self.choose_best_matches()
+    if self.find_initial_rows():
+      self.find_callgraph_matches()
+      self.choose_best_matches()
 
-    c = CDiffChooser(self, "Matched functions", self.best_matches)
-    c.show()
+      c = CDiffChooser(self, "Matched functions", self.best_matches)
+      c.show()
+    else:
+      Warning("No matches found.")
 
 #-------------------------------------------------------------------------------
 def main():
@@ -555,21 +619,35 @@ def main():
 
   x = CSrcDiffDialog()
   x.Compile()
+  x.iMinLevel.value = "0.4"
+  x.iMinDisplayLevel.value = "0.5"
+  x.iIndentCommand.value = "indent -kr -ci2 -cli2 -i2 -l80 -nut"
 
   if not x.Execute():
     return
 
-  database = x.iFileOpen.value
-  lexer = shlex.shlex(x.iIndentCommand.value)
-  lexer.wordchars += "-"
-  indent_cmd = list(lexer)
+  show_wait_box("Diffing...")
+  try:
+    database = x.iFileOpen.value
+    min_level = float(x.iMinLevel.value)
+    min_display_level = float(x.iMinDisplayLevel.value)
+    lexer = shlex.shlex(x.iIndentCommand.value)
+    lexer.wordchars += "-"
+    indent_cmd = list(lexer)
 
-  importer = CBinaryToSourceImporter()
-  importer.import_src(database)
+    importer = CBinaryToSourceImporter()
+    importer.min_level = min_level
+    importer.min_display_level = min_display_level
+    importer.import_src(database)
+  finally:
+    hide_wait_box()
 
 if __name__ == "__main__":
   try:
-    main()
-  except:
-    log("ERROR: %s" % str(sys.exc_info()[1]))
-    raise
+    try:
+      main()
+    except:
+      log("ERROR: %s" % str(sys.exc_info()[1]))
+      raise
+  finally:
+    hide_wait_box()
