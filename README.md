@@ -23,7 +23,7 @@ You can install in Debian based Linux distros the dependencies with the followin
  
  ```$ sudo apt-get install python-clang-5.0 python-colorama```
  
-There is no string requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9.
+There is no strong requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9.
 
 ## Using srctobindiff
 
@@ -152,8 +152,6 @@ BeginCountPerfCounter
 
 ## Importing symbols in IDA
 
-Once we have a binary opened in IDA that we know is using ZLib we can import symbols directly from the source code by running the IDAPython script ```sourceimp_ida.py``` and selecting, when asked, for the zlib-1.2.11.sqlite file we just exported before. After a few seconds, it will discover various functions by, first, just issuing some simple SQL queries and, later on, will find many more symbols by traversing the call graph of the initial matches (that should have near zero false positives) and find more matches. At the same time, you should have all the structures and enumerations that were found while parsing the ZLib source code.
+Once we have a binary opened in IDA that we know is using ZLib we can match functions directly from the source code by running the IDAPython script ```sourceimp_ida.py``` and selecting in the dialog the zlib-1.2.11.sqlite file we just exported before. After a few seconds, it will discover various functions by, first, just issuing some simple SQL queries and, later on, will find many more symbols by traversing the call graph of the initial matches (that should have near zero false positives) and find more matches. At the same time, you should have all the structures and enumerations that were found while parsing the ZLib source code.
 
 And that's it! Hopefully, it will make the life of reverse engineers easier and we will have to spend less time doing boring tasks like importing symbols or waste time reverse engineering open source libraries statically compiled in our targets.
-
-
