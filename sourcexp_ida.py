@@ -190,7 +190,8 @@ class CBinaryToSourceExporter:
                           calls integer,
                           externals integer,
                           recursive integer,
-                          indirects integer)"""
+                          indirects integer,
+                          globals   integer)"""
     cur.execute(sql)
 
     sql = """create table if not exists callgraph(
@@ -214,10 +215,17 @@ class CBinaryToSourceExporter:
         if is_constant(oper, ea) and constant_filter(oper.value):
           constants.add(oper.value)
 
+    seg_start_ea = SegStart(ea)
+    seg_end_ea   = SegEnd(ea)
+    globals_uses = set()
+
     drefs = list(DataRefsFrom(ea))
     if len(drefs) > 0:
       for dref in drefs:
         if get_func(dref) is None:
+          if dref < seg_start_ea or dref > seg_end_ea:
+            globals_uses.add(ea)
+
           if dref in self.names:
             externals.add(self.names[dref])
           else:
@@ -232,7 +240,7 @@ class CBinaryToSourceExporter:
               #print "0x%x: %s" % (ea, repr(str_constant))
               constants.add(str(str_constant))
 
-    return constants, externals
+    return constants, externals, globals_uses
 
   def parse_switches(self, ea, switches):
     switch = get_switch_info_ex(ea)
@@ -285,6 +293,7 @@ class CBinaryToSourceExporter:
     loops = 0
     recursive = False
     indirects = 0
+    globals_uses = set()
 
     # Variables required for calculations of previous ones
     bb_relations = {}
@@ -319,8 +328,8 @@ class CBinaryToSourceExporter:
         if is_call_insn(ea) and len(list(CodeRefsFrom(ea, 0))) == 0:
           indirects += 1
 
-        # Get the constants
-        constants, externals = self.parse_operands(ea, constants, externals)
+        # Get the constants, externals and globals
+        constants, externals, globals_uses = self.parse_operands(ea, constants, externals)
 
         # Get the switches information
         switches = self.parse_switches(ea, switches)
@@ -365,6 +374,7 @@ class CBinaryToSourceExporter:
       print "Globals     : %d" % len(externals)
       print "Recursive   : %d" % recursive
       print "Indirects   : %d" % indirects
+      print "Global uses : %d" % len(globals_uses)
       print
 
     cur = self.db.cursor()
@@ -372,18 +382,24 @@ class CBinaryToSourceExporter:
                          ea, name, prototype, prototype2, conditions,
                          constants, constants_json, loops, switchs,
                          switchs_json, calls, externals, recursive,
-                         indirects
+                         indirects, globals
                          )
-                         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
     args = (str(f), func_name, prototype, prototype2, conditions,
             len(constants), json.dumps(list(constants)), loops, len(switches),
-            json.dumps(str(switches)), len(calls), len(list(externals)),
-            recursive, int(indirects))
+            json.dumps(list(switches)), len(calls), len(list(externals)),
+            recursive, int(indirects), len(globals_uses))
     rowid = cur.execute(sql, args)
 
     sql = "insert into callgraph (caller, callee) values (?, ?)"
     for callee in calls:
       cur.execute(sql, (str(f), str(callee)))
+
+    sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
+    cur.execute(sql)
+
+    sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
+    cur.execute(sql)
 
     cur.close()
 

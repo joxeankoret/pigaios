@@ -47,6 +47,10 @@ class CCLangVisitor:
     self.externals = set()
     self.indirects = []
     self.recursive = False
+    self.globals_uses = set()
+
+    self.local_vars = set()
+    self.global_variables = set()
 
     self.mul = False
     self.div = False
@@ -199,6 +203,18 @@ class CCLangVisitor:
         elif token.spelling == "/":
           self.div = True
 
+  def visit_PARM_DECL(self, cursor):
+    self.local_vars.add(cursor.spelling)
+
+  def visit_VAR_DECL(self, cursor):
+    self.local_vars.add(cursor.spelling)
+  
+  def visit_DECL_REF_EXPR(self, cursor):
+    name = cursor.spelling
+    if name not in self.local_vars:
+      if name in self.global_variables:
+        self.globals_uses.add(name)
+
 #-------------------------------------------------------------------------------
 class CLangParser:
   def __init__(self):
@@ -260,6 +276,7 @@ class CClangExporter(CBaseExporter):
   def __init__(self, cfg_file):
     CBaseExporter.__init__(self, cfg_file)
     self.source_cache = {}
+    self.global_variables = set()
 
   def get_function_source(self, cursor):
     start_line = cursor.extent.start.line
@@ -289,6 +306,10 @@ class CClangExporter(CBaseExporter):
         if fileobj is not None and fileobj.name != filename:
           continue
 
+        if element.kind == CursorKind.VAR_DECL:
+          name = element.spelling
+          self.global_variables = name
+
         if element.kind == CursorKind.FUNCTION_DECL:
           tokens = element.get_tokens()
           token = next(tokens, None)
@@ -297,6 +318,7 @@ class CClangExporter(CBaseExporter):
               continue
 
           obj = CCLangVisitor(element.spelling)
+          obj.global_variables = self.global_variables
           parser.visitor(obj, cursor=element)
 
           prototype = ""
@@ -309,17 +331,17 @@ class CClangExporter(CBaseExporter):
                                  ea, name, prototype, prototype2, conditions,
                                  constants, constants_json, loops, switchs,
                                  switchs_json, calls, externals, filename,
-                                 callees, source, recursive, indirect)
+                                 callees, source, recursive, indirect, globals)
                                values
                                  ((select count(ea)+1 from functions),
                                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                                  ?, ?)"""
+                                  ?, ?, ?)"""
           args = (obj.name, prototype, prototype2, obj.conditions,
                   len(obj.constants), json.dumps(list(obj.constants)),
-                  obj.loops, len(obj.switches), json.dumps(str(obj.switches)),
+                  obj.loops, len(obj.switches), json.dumps(list(obj.switches)),
                   len(obj.calls), len(obj.externals),
                   filename, json.dumps(list(obj.calls)), source, obj.recursive,
-                  len(obj.indirects))
+                  len(obj.indirects), len(obj.globals_uses))
           cur.execute(sql, args)
 
       cur.execute("COMMIT")

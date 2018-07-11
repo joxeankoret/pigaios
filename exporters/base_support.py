@@ -170,7 +170,8 @@ class CBaseExporter:
                           callees text,
                           source text,
                           recursive integer,
-                          indirect integer)"""
+                          indirect integer,
+                          globals integer)"""
     cur.execute(sql)
 
     sql = """create table if not exists callgraph(
@@ -258,6 +259,13 @@ class CBaseExporter:
           except:
             # Ignore unique constraint violations
             print "build_callgraph():", str(sys.exc_info()[1])
+
+    export_log("[+] Creating indexes...")
+    sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
+    cur.execute(sql)
+
+    sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
+    cur.execute(sql)
 
     cur.close()
 

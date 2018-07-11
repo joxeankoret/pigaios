@@ -95,6 +95,9 @@ class CSBDExporter:
   def export(self, use_clang, opencl, gnu):
     exporter = None
     if use_clang:
+      if not has_clang:
+        raise Exception("Python CLang bindings aren't installed!")
+
       exporter = clang_exporter.CClangExporter(self.cfg_file)
     else:
       exporter = pycparser_exporter.CPyCParserExporter(self.cfg_file, gnu, opencl)

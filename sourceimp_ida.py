@@ -17,9 +17,12 @@ from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
 from sourcexp_ida import log, CBinaryToSourceExporter
 
 #-------------------------------------------------------------------------------
-COMPARE_FIELDS = ["name", "conditions", "constants", "constants_json", "loops",
-                  "switchs", "switchs_json", "calls", "externals", "recursive",
-                  "externals"]
+_DEBUG = False
+
+#-------------------------------------------------------------------------------
+COMPARE_FIELDS = ["name", "conditions", "constants_json", "loops", "switchs",
+                  "switchs_json", "calls", "externals", "recursive",
+                  "globals"]
 
 #-------------------------------------------------------------------------------
 def log(msg):
@@ -58,10 +61,10 @@ class CSrcDiffDialog(Form):
   Please select the path to the exported source code SQLite database to diff against the current
   binary database.
 
-  <#Select an exported source code SQLite database                                               #Database           :{iFileOpen}>
-  <#Enter the command line for indenting sources and pseudo-codes, leave in blank for ignoring it#Indent command     :{iIndentCommand}>
-  <#Minimum ratio to consider a match good enough                                                #Calculations ratio :{iMinLevel}>
-  <#Minimum ratio for a match to be displayed                                                    #Display ratio      :{iMinDisplayLevel}>
+  <#Select an exported source code SQLite database                                           #Database           :{iFileOpen}>
+  <#Enter the command line for indenting sources and pseudo-codes (leave blank to ignore it) #Indent command     :{iIndentCommand}>
+  <#Minimum ratio to consider a match good enough (set to zero to automatically calculate it)#Calculations ratio :{iMinLevel}>
+  <#Minimum ratio for a match to be displayed (set to zero to automatically calculate it)    #Display ratio      :{iMinDisplayLevel}>
 """
     args = {'iFileOpen'       : Form.FileInput(open=True, swidth=45),
             'iIndentCommand'  : Form.StringInput(swidth=45),
@@ -210,20 +213,38 @@ class CHtmlDiff:
     return res
 
 #-------------------------------------------------------------------------------
+def seems_false_positive(src_name, bin_name):
+  if bin_name.startswith("sub_") or bin_name.startswith("j_") or \
+     bin_name.startswith("unknown") or bin_name.startswith("nullsub_"):
+    return False
+
+  return not bin_name.startswith(src_name)
+
+#-------------------------------------------------------------------------------
 class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches):
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 14], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 20], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 20], ["FP?", 6], ]
+    if _DEBUG:
+      self.columns.append(["Reasons", 40])
+
     Choose2.__init__(self, title, columns, Choose2.CH_MULTI)
     self.n = 0
     self.icon = -1
     self.selcount = 0
     self.modal = False
     self.items = []
+
     for i, match in enumerate(matches):
-      ea, name, heuristic, score = matches[match]
-      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), GetFunctionName(long(ea)), str(score), heuristic]
+      ea, name, heuristic, score, reason = matches[match]
+      bin_func_name = GetFunctionName(long(ea))
+      maybe_false_positive = int(seems_false_positive(name, bin_func_name))
+      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), heuristic, str(maybe_false_positive)]
+      if _DEBUG:
+        line.append(reason)
       self.items.append(line)
+
+    self.items = sorted(self.items, key=lambda x: x[5], reverse=True)
 
   def show(self):
     ret = self.Show(False)
@@ -234,7 +255,18 @@ class CDiffChooser(Choose2):
 
   def OnGetLineAttr(self, n):
     line = self.items[n]
-    return [0xFFFFFF, 0]
+    bin_name = line[4]
+    if not bin_name.startswith("sub_"):
+      src_name = line[2]
+      if not line[4].startswith(line[2]):
+        return [0x0000FF, 0]
+
+    ratio = float(line[5])
+    red = int(164 * (1 - ratio))
+    green = int(128 * ratio)
+    blue = int(255 * (1 - ratio))
+    color = int("0x%02x%02x%02x" % (blue, green, red), 16)
+    return [color, 0]
 
   def OnGetLine(self, n):
     return self.items[n]
@@ -307,6 +339,7 @@ class CBinaryToSourceImporter:
     self.min_display_level = None
     self.pseudo = {}
     self.best_matches = {}
+    self.dubious_matches = {}
 
   def decompile_and_get(self, ea):
     decompiler_plugin = os.getenv("DIAPHORA_DECOMPILER_PLUGIN")
@@ -356,44 +389,74 @@ class CBinaryToSourceImporter:
     src_row = cur.fetchone()
     cur.close()
 
+    reasons = []
+    # XXX:FIXME: Try to automatically build a decission tree here?
     score = 0
+    non_zero_num_matches = 0
     for field in fields:
-      if src_row[field] == bin_row[field] and field.find("_json") == -1:
-        score += 1
+      if src_row[field] == bin_row[field] and field == "name":
+        score += 3
+        reasons.append("Same name")
       elif type(src_row[field]) in [int, long]:
-        max_val = max(src_row[field], bin_row[field])
-        min_val = min(src_row[field], bin_row[field])
-        if max_val > 0:
-          score += (min_val * 1.0) / (max_val * 1.0)
+        if src_row[field] == bin_row[field]:
+          score += 1.1
+          non_zero_num_matches += int(src_row[field] != 0)
+          reasons.append("Same %s" % field)
+        else:
+          max_val = max(src_row[field], bin_row[field])
+          min_val = min(src_row[field], bin_row[field])
+          if max_val > 0 and min_val > 0:
+            tmp = (min_val * 1.0) / (max_val * 1.0)
+            score += tmp
+            reasons.append("Similar %s (%f)" % (field, tmp))
+      elif src_row[field] == bin_row[field] and field.find("_json") == -1:
+        score += 1.5
+        reasons.append("Same %s" % field)
+      elif src_row[field] == bin_row[field] and field.find("_json") > -1 and len(src_row[field]) > 4:
+        score += 2
+        reasons.append("Same %s" % field)
       elif field.endswith("_json"):
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
         at_least_one_match = False
         for src_key in src_json:
+          if type(src_key) is str and len(src_key) < 4:
+            continue
+
           for src_bin in bin_json:
+            if type(src_bin) is str and len(src_bin) < 4:
+              continue
+
             if src_key == src_bin:
               at_least_one_match = True
               break
 
-        sub_score = 0
+        # By default, if no single constant was equal and we have a few, the
+        # match is considered bad
+        sub_score = -0.3
         if at_least_one_match:
           sub_score = quick_ratio(src_json, bin_json)
+          reasons.append("Similar JSON %s (%f)" % (field, sub_score))
 
         score += sub_score
 
     score = (score * 1.0) / (len(fields))
-    return score
+    if non_zero_num_matches < 4:
+      score -= 0.2
+
+    return min(score, 1.0), reasons
 
   def find_initial_rows(self):
     cur = self.db.cursor()
     sql = """ select bin.ea, src.name, src.id, bin.id
                 from functions bin,
                      src.functions src
-               where bin.conditions between src.conditions and src.conditions + 3
+               where (bin.conditions between src.conditions and src.conditions + 3
+                   or bin.name = src.name)
                  and bin.constants = src.constants
                  and bin.constants_json = src.constants_json
                  and (select count(*) from src.functions x where x.constants_json = src.constants_json) < %d
-                 and src.constants_json != '"[]"'
+                 and src.constants_json != '[]'
                  and src.constants > 0
                  and src.conditions > 1
                  and bin.loops = src.loops """
@@ -420,27 +483,45 @@ class CBinaryToSourceImporter:
         except:
           matches_count[row[1]] = 1
 
+      min_score = 1
       for row in rows:
         func_ea = long(row[0])
         match_name = row[1]
         match_id = row[2]
         bin_id = row[3]
-        score = self.compare_functions(match_id, bin_id)
-        self.add_match(match_id, func_ea, match_name, "Attributes matching", score)
+        score, reasons = self.compare_functions(match_id, bin_id)
+        if score < min_score:
+          min_score = score
+
+        self.add_match(match_id, func_ea, match_name, "Attributes matching",
+                       score, reasons)
+
+    # We have had too good matches or too few, use a more relaxed minimum score
+    if min_score > 0.5:
+      min_score = 0.5
+
+    # If the minimum ratios were set to '0', calculate them from the minimum
+    # ratio we get from the initial best matches (which must be false positives
+    # free).
+    if self.min_level == 0.0:
+      self.min_level = min_score - 0.2
+
+    if self.min_display_level == 0.0:
+      self.min_display_level = min_score - 0.1
 
     cur.close()
     return size != 0
 
-  def add_match(self, match_id, func_ea, match_name, heur, score):
+  def add_match(self, match_id, func_ea, match_name, heur, score, reasons):
     if score < self.min_level:
       return
 
     if match_id in self.best_matches:
-      old_ea, old_name, old_heur, old_score = self.best_matches[match_id]
+      old_ea, old_name, old_heur, old_score, old_reasons = self.best_matches[match_id]
       if old_score >= score:
         return
 
-    self.best_matches[match_id] = (func_ea, match_name, heur, score)
+    self.best_matches[match_id] = (func_ea, match_name, heur, score, ", ".join(reasons))
 
   def get_binary_func_id(self, ea):
     cur = self.db.cursor()
@@ -520,16 +601,19 @@ class CBinaryToSourceImporter:
       if src_rows is not None and len(src_rows) > 0:
         bin_rows = list(self.get_binary_call_type(bin_ea, call_type))
         if bin_rows is not None and len(bin_rows) > 0:
+          if _DEBUG: print "Finding matches in a cartesian product of %d x %d row(s)" % (len(src_rows), len(bin_rows))
           for src_row in src_rows:
             for bin_row in bin_rows:
               curr_bin_id = self.get_binary_func_id(bin_row[call_type])
               if not curr_bin_id:
                 continue
 
-              score = self.compare_functions(src_row[call_type], curr_bin_id)
+              score, reasons = self.compare_functions(src_row[call_type], curr_bin_id)
               if score >= min_level:
                 func_name = self.get_source_func_name(src_row[call_type])
-                self.add_match(long(src_row[call_type]), bin_row[call_type], func_name, "Callgraph match (%s)" % call_type, score)
+                self.add_match(long(src_row[call_type]), bin_row[call_type],
+                               func_name, "Callgraph match (%s)" % call_type,
+                               score, reasons)
 
     cur.close()
 
@@ -551,13 +635,15 @@ class CBinaryToSourceImporter:
         dones.add(match_id)
 
         if match_id in self.best_matches:
-          ea, bin_caller, heur, score = self.best_matches[match_id]
+          ea, bin_caller, heur, score, reasons = self.best_matches[match_id]
           if ea in ea_dones:
             continue
           ea_dones.add(ea)
 
           self.find_one_callgraph_match(match_id, ea, self.min_level, "callee")
           self.find_one_callgraph_match(match_id, ea, self.min_level, "caller")
+
+          self.choose_best_matches()
 
       if len(self.best_matches) == total:
         break
@@ -569,8 +655,9 @@ class CBinaryToSourceImporter:
       if src_id not in self.best_matches:
         continue
 
-      ea, func, heur, score = self.best_matches[src_id]
-      if score < self.min_display_level:
+      ea, func, heur, score, reasons = self.best_matches[src_id]
+      if score <= self.min_display_level:
+        if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
         continue
 
@@ -580,25 +667,28 @@ class CBinaryToSourceImporter:
       else:
         old_ea, old_score = src_d[src_id]
         old_ea = str(old_ea)
-        if score > old_score:
+        if score >= old_score:
           src_d[src_id] = (ea, score)
         else:
+          if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
           del self.best_matches[src_id]
 
       if ea not in bin_d:
         bin_d[ea] = (src_id, score)
       else:
         old_src_id, old_score = bin_d[ea]
-        if score > old_score:
+        if score >= old_score:
           bin_d[ea] = (src_id, score)
         else:
+          if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
           del self.best_matches[src_id]
 
     for src_id in list(self.best_matches):
-      ea, func, heur, score = self.best_matches[src_id]
+      ea, func, heur, score, reasons = self.best_matches[src_id]
       ea = str(ea)
       tmp_id, score = bin_d[ea]
       if tmp_id != src_id:
+        if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
 
   def import_src(self, src_db):
@@ -610,6 +700,10 @@ class CBinaryToSourceImporter:
 
       c = CDiffChooser(self, "Matched functions", self.best_matches)
       c.show()
+
+      if _DEBUG:
+        c = CDiffChooser(self, "Dubious matches", self.dubious_matches)
+        c.show()
     else:
       Warning("No matches found.")
 
@@ -619,8 +713,8 @@ def main():
 
   x = CSrcDiffDialog()
   x.Compile()
-  x.iMinLevel.value = "0.4"
-  x.iMinDisplayLevel.value = "0.5"
+  x.iMinLevel.value = "0.0"
+  x.iMinDisplayLevel.value = "0.0"
   x.iIndentCommand.value = "indent -kr -ci2 -cli2 -i2 -l80 -nut"
 
   if not x.Execute():
