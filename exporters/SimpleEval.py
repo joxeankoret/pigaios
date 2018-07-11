@@ -150,6 +150,8 @@ class SimpleEval:
 
     if type(token) is str:
       token = token.lower()
+      if token.endswith("e"):
+        token += "0"
 
     if token.startswith("0x"):
       token = long(token, 16)
