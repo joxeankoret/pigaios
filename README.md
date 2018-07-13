@@ -136,7 +136,7 @@ gzwrite.c:661,9: warning: implicit declaration of function 'close' is invalid in
 14 warning(s), 0 error(s), 5 fatal error(s)
 ```
 
-As we can see, it compiled, parsed and generated everything from the source code and the process generated 14 warnings and 5 errors. The errors are because I'm compiling the ZLib source code in Linux and I don't have the windows.h header, for example. We can remove the files that are failing or we can just ignore them as one features of this project is that it can parse both partial and non compilable source codes. Whatever we decide to do, we will have a SQLite database called "zlib-1.2.11.sqlite" in the same directory where we ran the command. We can open that database with whatever tool that supports SQLite databases, if we want to do so, like its command line tool:
+As we can see, it compiled, parsed and generated everything from the source code and the process generated 14 warnings and 5 errors. The errors are because I'm compiling the ZLib source code in Linux and I don't have the windows.h header, for example. We can remove the files that are failing or we can just ignore them as one feature of this project is that it can parse both partial and non compilable source codes. Whatever we decide to do, we will have a SQLite database called "zlib-1.2.11.sqlite" in the same directory where we ran the command. We can open that database with whatever tool that supports SQLite databases, if we want to do so, like its command line tool:
 
 ```
 $ sqlite3 zlib-1.2.11.sqlite 
