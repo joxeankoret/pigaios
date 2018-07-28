@@ -224,8 +224,9 @@ def seems_false_positive(src_name, bin_name):
 class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches):
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 20], ["FP?", 6], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 20], ]
     if _DEBUG:
+      self.columns.append(["FP?", 6])
       self.columns.append(["Reasons", 40])
 
     Choose2.__init__(self, title, columns, Choose2.CH_MULTI)
@@ -238,9 +239,10 @@ class CDiffChooser(Choose2):
     for i, match in enumerate(matches):
       ea, name, heuristic, score, reason = matches[match]
       bin_func_name = GetFunctionName(long(ea))
-      maybe_false_positive = int(seems_false_positive(name, bin_func_name))
-      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), heuristic, str(maybe_false_positive)]
+      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), heuristic]
       if _DEBUG:
+        maybe_false_positive = int(seems_false_positive(name, bin_func_name))
+        line.append(str(maybe_false_positive))
         line.append(reason)
       self.items.append(line)
 
@@ -395,7 +397,7 @@ class CBinaryToSourceImporter:
     non_zero_num_matches = 0
     for field in fields:
       if src_row[field] == bin_row[field] and field == "name":
-        score += 3
+        score += 4
         reasons.append("Same name")
       elif type(src_row[field]) in [int, long]:
         if src_row[field] == bin_row[field]:
@@ -496,18 +498,18 @@ class CBinaryToSourceImporter:
         self.add_match(match_id, func_ea, match_name, "Attributes matching",
                        score, reasons)
 
-    # We have had too good matches or too few, use a more relaxed minimum score
-    if min_score > 0.5:
-      min_score = 0.5
+      # We have had too good matches or too few, use a more relaxed minimum score
+      if min_score > 0.5:
+        min_score = 0.5
 
-    # If the minimum ratios were set to '0', calculate them from the minimum
-    # ratio we get from the initial best matches (which must be false positives
-    # free).
-    if self.min_level == 0.0:
-      self.min_level = min_score - 0.2
+      # If the minimum ratios were set to '0', calculate them from the minimum
+      # ratio we get from the initial best matches (which must be false positives
+      # free).
+      if self.min_level == 0.0:
+        self.min_level = min_score - 0.3
 
-    if self.min_display_level == 0.0:
-      self.min_display_level = min_score - 0.1
+      if self.min_display_level == 0.0:
+        self.min_display_level = min_score - 0.3
 
     cur.close()
     return size != 0
@@ -643,7 +645,7 @@ class CBinaryToSourceImporter:
           self.find_one_callgraph_match(match_id, ea, self.min_level, "callee")
           self.find_one_callgraph_match(match_id, ea, self.min_level, "caller")
 
-          self.choose_best_matches()
+      self.choose_best_matches()
 
       if len(self.best_matches) == total:
         break
@@ -656,7 +658,8 @@ class CBinaryToSourceImporter:
         continue
 
       ea, func, heur, score, reasons = self.best_matches[src_id]
-      if score <= self.min_display_level:
+      bin_func_name = GetFunctionName(long(ea))
+      if score <= self.min_display_level or seems_false_positive(func, bin_func_name):
         if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
         continue
@@ -706,6 +709,7 @@ class CBinaryToSourceImporter:
         c.show()
     else:
       Warning("No matches found.")
+      log("No matches found.")
 
 #-------------------------------------------------------------------------------
 def main():

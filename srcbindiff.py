@@ -59,6 +59,7 @@ class CSBDProject:
     config.add_section(section)
     clang_includes = self.resolve_clang_includes()
     config.set(section, "includes", clang_includes)
+    config.set(section, "inlines", 0)
     
     # Add the project specific configuration section
     section = "PROJECT"

@@ -9,6 +9,7 @@ from SimpleEval import simple_eval
 
 #-------------------------------------------------------------------------------
 CONDITIONAL_OPERATORS = ["==", "!=", "<", ">", ">=", "<=", "?"]
+INLINE_NAMES = ["inline", "__inline", "__inline__", "__forceinline", "always_inline"]
 
 #-------------------------------------------------------------------------------
 def severity2text(severity):
@@ -24,6 +25,30 @@ def severity2text(severity):
     return "fatal"
   else:
     return "unknown"
+
+#-------------------------------------------------------------------------------
+def is_inline(cursor):
+  if cursor.kind != CursorKind.FUNCTION_DECL:
+    return False
+
+  for token in cursor.get_tokens():
+    tkn = token.spelling
+    for name in INLINE_NAMES:
+      if tkn.find(name) > -1:
+        return True
+    if tkn == "{":
+      break
+
+  return False
+
+#-------------------------------------------------------------------------------
+def is_static(cursor):
+  if cursor.kind != CursorKind.FUNCTION_DECL:
+    return False
+  token = next(cursor.get_tokens(), None)
+  if token is None:
+    return False
+  return token.spelling == "static"
 
 #-------------------------------------------------------------------------------
 def dump_ast(cursor, level = 0):
@@ -311,6 +336,7 @@ class CClangExporter(CBaseExporter):
           self.global_variables = name
 
         if element.kind == CursorKind.FUNCTION_DECL:
+          static = element.is_static_method()
           tokens = element.get_tokens()
           token = next(tokens, None)
           if token is not None:
@@ -319,6 +345,8 @@ class CClangExporter(CBaseExporter):
 
           obj = CCLangVisitor(element.spelling)
           obj.global_variables = self.global_variables
+          obj.is_inlined = is_inline(element)
+          obj.is_static = is_static(element)
           parser.visitor(obj, cursor=element)
 
           prototype = ""
@@ -331,17 +359,19 @@ class CClangExporter(CBaseExporter):
                                  ea, name, prototype, prototype2, conditions,
                                  constants, constants_json, loops, switchs,
                                  switchs_json, calls, externals, filename,
-                                 callees, source, recursive, indirect, globals)
+                                 callees, source, recursive, indirect, globals,
+                                 inlined, static)
                                values
                                  ((select count(ea)+1 from functions),
                                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                                  ?, ?, ?)"""
+                                  ?, ?, ?, ?, ?)"""
           args = (obj.name, prototype, prototype2, obj.conditions,
                   len(obj.constants), json.dumps(list(obj.constants)),
                   obj.loops, len(obj.switches), json.dumps(list(obj.switches)),
                   len(obj.calls), len(obj.externals),
                   filename, json.dumps(list(obj.calls)), source, obj.recursive,
-                  len(obj.indirects), len(obj.globals_uses))
+                  len(obj.indirects), len(obj.globals_uses), obj.is_inlined,
+                  obj.is_static)
           cur.execute(sql, args)
 
       cur.execute("COMMIT")

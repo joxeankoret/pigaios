@@ -5,6 +5,7 @@ import sys
 import json
 import shlex
 import sqlite3
+import itertools
 import ConfigParser
 
 from terminalsize import get_terminal_size
@@ -128,6 +129,16 @@ def export_log(msg):
     print(Fore.RESET + tmp[:pos1] + COLOR_SUBSTRS[substr] + tmp[pos1:pos2] + Fore.RESET + tmp[pos2:])
 
 #-------------------------------------------------------------------------------
+def all_combinations(items):
+  for item in items:
+    yield (item, )
+
+  n = len(items)
+  for k in range(2,n+1):
+    for combo in itertools.combinations(items,k):
+      yield combo
+
+#-------------------------------------------------------------------------------
 class CBaseExporter:
   def __init__(self, cfg_file):
     self.cfg_file = cfg_file
@@ -171,7 +182,9 @@ class CBaseExporter:
                           source text,
                           recursive integer,
                           indirect integer,
-                          globals integer)"""
+                          globals integer,
+                          inlined integer,
+                          static integer)"""
     cur.execute(sql)
 
     sql = """create table if not exists callgraph(
@@ -181,7 +194,7 @@ class CBaseExporter:
                           )"""
     cur.execute(sql)
 
-    sql = """ create unique index idx_callgraph on callgraph (caller, callee) """
+    sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
     cur.close()
     return self.db
@@ -234,10 +247,9 @@ class CBaseExporter:
     pool = ThreadPool(total_cpus)
     pool.map(self.do_export_one, pool_args)
 
-  def build_callgraph(self):
+  def build_callgraphs(self, cur):
     export_log("[+] Building the callgraphs...")
     functions_cache = {}
-    cur = self.db.cursor()
     sql = "select id, name, callees from functions where calls > 0"
     cur.execute(sql)
     for row in list(cur.fetchall()):
@@ -258,8 +270,9 @@ class CBaseExporter:
             cur2.close()
           except:
             # Ignore unique constraint violations
-            print "build_callgraph():", str(sys.exc_info()[1])
+            print "final_steps():", str(sys.exc_info()[1])
 
+  def create_indexes(self, cur):
     export_log("[+] Creating indexes...")
     sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
     cur.execute(sql)
@@ -267,6 +280,149 @@ class CBaseExporter:
     sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
     cur.execute(sql)
 
+  def get_function_data(self, func, cur=None):
+    close = False
+    if cur is None:
+      close = True
+      cur = self.db.cursor()
+
+    sql = """select conditions, constants, constants_json, loops, switchs,
+                    switchs_json, calls, externals, indirect, globals
+               from functions where id = ?"""
+    cur.execute(sql, (func, ))
+    row = cur.fetchone()
+    
+    if close:
+      cur.close()
+
+    return row
+
+  def mix_json(self, j1, j2):
+    ret1 = json.loads(j1)
+    ret2 = json.loads(j2)
+    for x in ret2:
+      if x not in ret1:
+        ret1.append(x)
+    return json.dumps(ret1)
+
+  def create_inline(self, cur, func, per):
+    curr_func = self.get_function_data(func, cur)
+
+    sql = """insert into functions(
+               ea, name, prototype, prototype2, conditions,
+               constants, constants_json, loops, switchs,
+               switchs_json, calls, externals, filename,
+               callees, source, recursive, indirect, globals,
+               inlined, static)
+             select (select count(ea)+1 from functions),
+               name || '_with_inlines', prototype, prototype2, conditions,
+               constants, constants_json, loops, switchs,
+               switchs_json, calls, externals, filename,
+               callees, source, recursive, indirect, globals,
+               inlined, static
+               from functions
+              where id = ?"""
+
+    for inline_func in per:
+      cur.execute(sql, (func, ))
+      last_id = cur.lastrowid
+      sql2 = """select conditions, constants, constants_json, loops, switchs,
+                       switchs_json, calls, externals, indirect, globals
+                  from functions
+                 where id = ?"""
+      cur.execute(sql2, (inline_func[0], ))
+
+      inline_row = cur.fetchone()
+      if inline_row:
+        conditions = int(curr_func[0]) + int(inline_row[0])
+        constants  = int(curr_func[1]) + int(inline_row[1])
+        constants_json = self.mix_json(curr_func[2], inline_row[2])
+        loops      = int(curr_func[3]) + int(inline_row[3])
+        switchs    = int(curr_func[4]) + int(inline_row[4])
+        switchs_json = self.mix_json(curr_func[5], inline_row[5])
+        calls      = int(curr_func[6]) + int(inline_row[6])
+        externals  = int(curr_func[7]) + int(inline_row[7])
+        indirect   = int(curr_func[8]) + int(inline_row[8])
+        _globals   = int(curr_func[9]) + int(inline_row[9])
+        
+        sql3 = """update functions set conditions     = ?,
+                                       constants      = ?,
+                                       constants_json = ?,
+                                       loops          = ?,
+                                       switchs        = ?,
+                                       switchs_json   = ?,
+                                       calls          = ?,
+                                       externals      = ?,
+                                       indirect       = ?,
+                                       globals        = ?
+                             where id = ?"""
+        cur.execute(sql3, (conditions, constants, constants_json, loops,
+                           switchs, switchs_json, calls, externals, indirect,
+                           _globals, last_id))
+
+  def build_inlines(self, cur):
+    """
+    Try to build inlined copies of the functions we found so far. For this, we
+    have a couple of rules:
+
+      * The function is specifically marked as inline.
+      * It is static and there is just one caller?
+
+    """
+    export_log("[+] Creating inlined functions...")
+    cur = self.db.cursor()
+
+    sql = """select cg.caller caller, cg.callee callee,
+                    (select name
+                       from functions fc
+                      where fc.id = cg.caller) caller_name,
+                    f.name callee_name
+              from callgraph cg,
+                   functions f
+             where cg.callee = f.id
+               and (static = 1 or inlined = 1)"""
+    cur.execute(sql)
+    rows = cur.fetchall()
+    
+    inlines = {}
+    if len(rows) > 0:
+      for row in rows:
+        try:
+          inlines[row[0]].append([row[1], row[3]])
+        except:
+          inlines[row[0]] = [[row[1], row[3]]]
+
+    cur.execute("PRAGMA synchronous = OFF")
+    cur.execute("BEGIN")
+    dones = set()
+    export_log("[+] Found %d candidate inlined function(s)" % len(inlines))
+    for func in inlines:
+      if len(inlines[func]) > 10:
+        #print "Too many things to combine, skipping..."
+        continue
+
+      pers = list(all_combinations(inlines[func]))
+      pers.sort()
+      if str(pers) in dones:
+        continue
+
+      dones.add(str(pers))
+      if len(pers) > 10:
+        #print "Too many combinations, skipping..."
+        continue
+
+      for per in pers:
+        self.create_inline(cur, func, per)
+
+    cur.execute("COMMIT")
+    cur.close()
+
+  def final_steps(self):
+    cur = self.db.cursor()
+    self.build_callgraphs(cur)
+    if int(self.config.get('GENERAL', 'inlines')) == 1:
+      self.build_inlines(cur)
+    self.create_indexes(cur)
     cur.close()
 
   def export(self):
@@ -304,7 +460,7 @@ class CBaseExporter:
           self.fatals += 1
           raise
 
-    self.build_callgraph()
+    self.final_steps()
 
   def export_one(self, filename, args, is_c):
     raise Exception("Not implemented in the inherited class")
