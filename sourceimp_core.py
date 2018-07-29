@@ -19,6 +19,10 @@ _DEBUG=False
 COMPARE_FIELDS = ["name", "conditions", "constants_json", "loops", "switchs",
                   "switchs_json", "calls", "externals", "recursive", "globals"]
 
+COMPARE_WEIGHTS = {"name":4, "conditions":1.1, "constants_json":2, "loops":1.1,
+  "switchs":1.1, "switchs_json":2, "calls":1.1, "externals":1.1, "globals":1.1,
+  "recursive":1.1}
+
 #-----------------------------------------------------------------------
 def quick_ratio(buf1, buf2):
   try:
@@ -229,6 +233,17 @@ class CBinaryToSourceImporter:
     cur.close()
     return func_name
 
+  def get_source_field_name(self, id, field):
+    cur = self.db.cursor()
+    func_name = None
+    sql = "select %s from src.functions where id = ?" % field
+    cur.execute(sql, (id, ))
+    row = cur.fetchone()
+    if row is not None:
+      func_name = row[field]
+    cur.close()
+    return func_name
+
   def get_source_callees(self, src_id):
     cur = self.db.cursor()
     sql = "select callee from src.callgraph where caller = ?"
@@ -372,3 +387,4 @@ class CBinaryToSourceImporter:
       if tmp_id != src_id:
         if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
+

@@ -12,7 +12,7 @@ from subprocess import Popen, PIPE, STDOUT
 
 from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
                     get_func, decompile, tag_remove, show_wait_box,
-                    hide_wait_box, replace_wait_box)
+                    hide_wait_box, replace_wait_box, askyn_c)
 
 from sourceimp_core import *
 from sourcexp_ida import log, CBinaryToSourceExporter
@@ -38,6 +38,13 @@ def indent_source(src):
       return tmp
   except:
     return src.replace("<", "&lt;").replace(">", "&gt;")
+
+#-----------------------------------------------------------------------
+def is_ida_func(bin_name):
+  if bin_name.startswith("sub_") or bin_name.startswith("j_") or \
+     bin_name.startswith("unknown") or bin_name.startswith("nullsub_"):
+    return True
+  return False
 
 #-----------------------------------------------------------------------
 class CSrcDiffDialog(Form):
@@ -199,7 +206,8 @@ class CHtmlDiff:
 
 #-------------------------------------------------------------------------------
 class CDiffChooser(Choose2):
-  def __init__(self, differ, title, matches):
+  def __init__(self, differ, title, matches, importer_obj):
+    self.importer = importer_obj
     self.differ = differ
     columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 20], ]
     if _DEBUG:
@@ -212,6 +220,7 @@ class CDiffChooser(Choose2):
     self.selcount = 0
     self.modal = False
     self.items = []
+    self.selected_items = []
 
     for i, match in enumerate(matches):
       ea, name, heuristic, score, reason = matches[match]
@@ -230,7 +239,14 @@ class CDiffChooser(Choose2):
     if ret < 0:
       return False
 
-    self.cmd_diff_c = self.AddCommand("Diff pseudo-code")
+    if not init_hexrays_plugin() and not (load_plugin(decompiler_plugin) and init_hexrays_plugin()):
+      # Don't do anything if there is no decompiler, just ignore that for now...
+      pass
+    else:
+      self.cmd_diff_c = self.AddCommand("Diff pseudo-code")
+
+    self.cmd_import_all = self.AddCommand("Import all functions")
+    self.cmd_import_selected = self.AddCommand("Import selected functions")
 
   def OnGetLineAttr(self, n):
     line = self.items[n]
@@ -268,6 +284,9 @@ class CDiffChooser(Choose2):
     if isEnabled(ea):
       jumpto(ea)
 
+  def OnSelectionChange(self, sel_list):
+    self.selected_items = sel_list
+
   def OnCommand(self, n, cmd_id):
     if cmd_id == self.cmd_diff_c:
       html_diff = CHtmlDiff()
@@ -299,6 +318,23 @@ class CDiffChooser(Choose2):
       title = "Diff pseudo-source %s - %s" % (item[2], item[4])
       cdiffer = CHtmlViewer()
       cdiffer.Show(src, title)
+    elif cmd_id == self.cmd_import_all:
+      if askyn_c(1, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
+        import_items = []
+        for item in self.items:
+          src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
+          import_items.append([src_id, src_name, bin_ea])
+
+        self.importer.import_items(import_items)
+    elif cmd_id == self.cmd_import_selected:
+      if len(self.selected_items) == 1 or askyn_c(1, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
+        import_items = []
+        for index in self.selected_items:
+          item = self.items[index]
+          src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
+          import_items.append([src_id, src_name, bin_ea])
+
+        self.importer.import_items(import_items)
 
 #-------------------------------------------------------------------------------
 class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
@@ -351,15 +387,24 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
       self.find_callgraph_matches()
       self.choose_best_matches()
 
-      c = CDiffChooser(self, "Matched functions", self.best_matches)
+      c = CDiffChooser(self, "Matched functions", self.best_matches, self)
       c.show()
 
       if _DEBUG:
-        c = CDiffChooser(self, "Dubious matches", self.dubious_matches)
+        c = CDiffChooser(self, "Dubious matches", self.dubious_matches, self)
         c.show()
     else:
       Warning("No matches found.")
       log("No matches found.")
+  
+  def import_items(self, import_items):
+    for src_id, src_name, bin_ea in import_items:
+      bin_name = GetFunctionName(bin_ea)
+      if is_ida_func(bin_name):
+        MakeName(bin_ea, src_name)
+        proto = self.get_source_field_name(src_id, "prototype")
+        if proto is not None:
+          SetType(bin_ea, "%s;" % proto)
 
 #-------------------------------------------------------------------------------
 def main():

@@ -315,6 +315,18 @@ class CClangExporter(CBaseExporter):
     source = "".join(self.source_cache[filename][start_line-1:end_line])
     return source
 
+  def get_prototype(self, cursor):
+    args = []
+    for arg in cursor.get_arguments():
+      args.append("%s %s" % (arg.type.spelling, arg.spelling))
+
+    prototype = None
+    definition = cursor.get_definition()
+    if definition is not None:
+      prototype = "%s %s(%s)" % (cursor.get_definition().result_type.spelling, cursor.spelling, ", ".join(args))
+
+    return prototype
+
   def export_one(self, filename, args, is_c):
     parser = CLangParser()
     parser.parse(filename, args)
@@ -349,7 +361,7 @@ class CClangExporter(CBaseExporter):
           obj.is_static = is_static(element)
           parser.visitor(obj, cursor=element)
 
-          prototype = ""
+          prototype = self.get_prototype(element)
           prototype2 = ""
           source = self.get_function_source(element)
           if source is None or source == "":
