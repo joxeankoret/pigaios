@@ -14,6 +14,9 @@ from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
                     get_func, decompile, tag_remove, show_wait_box,
                     hide_wait_box, replace_wait_box, askyn_c)
 
+import sourceimp_core
+reload(sourceimp_core)
+
 from sourceimp_core import *
 from sourcexp_ida import log, CBinaryToSourceExporter
 
@@ -45,6 +48,13 @@ def is_ida_func(bin_name):
      bin_name.startswith("unknown") or bin_name.startswith("nullsub_"):
     return True
   return False
+
+#-----------------------------------------------------------------------
+def get_decompiler_plugin():
+  decompiler_plugin = os.getenv("DIAPHORA_DECOMPILER_PLUGIN")
+  if decompiler_plugin is None:
+    decompiler_plugin = "hexrays"
+  return decompiler_plugin
 
 #-----------------------------------------------------------------------
 class CSrcDiffDialog(Form):
@@ -239,6 +249,7 @@ class CDiffChooser(Choose2):
     if ret < 0:
       return False
 
+    decompiler_plugin = get_decompiler_plugin()
     if not init_hexrays_plugin() and not (load_plugin(decompiler_plugin) and init_hexrays_plugin()):
       # Don't do anything if there is no decompiler, just ignore that for now...
       pass
@@ -342,10 +353,7 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     CBinaryToSourceImporter.__init__(self, GetIdbPath())
 
   def decompile_and_get(self, ea):
-    decompiler_plugin = os.getenv("DIAPHORA_DECOMPILER_PLUGIN")
-    if decompiler_plugin is None:
-      decompiler_plugin = "hexrays"
-
+    decompiler_plugin = get_decompiler_plugin()
     if not init_hexrays_plugin() and not (load_plugin(decompiler_plugin) and init_hexrays_plugin()):
       return False
 
