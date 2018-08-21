@@ -119,6 +119,11 @@ class CCLangVisitor:
     value = 0
     for children in cursor.get_children():
       tokens = list(children.get_tokens())
+      if len(tokens) == 0:
+        # XXX:FIXME: I'm ignoring it too fast, I should take a careful look into
+        # it to be sure what should I do here...
+        break
+
       name = tokens[0].spelling
       if len(tokens) == 3:
         value = get_clean_number(tokens[2].spelling)

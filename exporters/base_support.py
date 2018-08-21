@@ -20,6 +20,9 @@ except:
   has_colorama = False
 
 #-------------------------------------------------------------------------------
+VERSION_VALUE = "Pigaios Source Exporter 1.0"
+
+#-------------------------------------------------------------------------------
 CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp"]
 COLOR_SUBSTRS  = {"CC ":Fore.GREEN,
                  "CXX ":Fore.GREEN, 
@@ -196,6 +199,10 @@ class CBaseExporter:
 
     sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
+
+    sql = "insert into version values (?)"
+    cur.execute(sql, (VERSION_VALUE,))
+
     cur.close()
     return self.db
 

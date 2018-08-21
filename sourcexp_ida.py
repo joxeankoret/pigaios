@@ -13,6 +13,9 @@ from idautils import *
 from others.tarjan_sort import strongly_connected_components
 
 #-------------------------------------------------------------------------------
+VERSION_VALUE = "Pigaios IDA Exporter 1.0"
+
+#-------------------------------------------------------------------------------
 BANNED_FUNCTIONS = ['__asprintf_chk',
  '__builtin___fprintf_chk',
  '__builtin___memccpy_chk',
@@ -203,6 +206,12 @@ class CBinaryToSourceExporter:
 
     sql = """ create unique index idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
+
+    sql = """ create table if not exists version (value text) """
+    cur.execute(sql)
+
+    sql = "insert into version values (?)"
+    cur.execute(sql, (VERSION_VALUE,))
 
     cur.close()
 

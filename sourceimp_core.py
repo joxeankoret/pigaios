@@ -35,7 +35,7 @@ COMPARE_WEIGHTS = {"name":4, "conditions":1.1, "constants_json":2, "loops":1.1,
   "switchs":1.1, "switchs_json":2, "calls":1.1, "externals":1.1, "globals":1.1,
   "recursive":1.1}
 
-#-----------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 def quick_ratio(buf1, buf2):
   try:
     if buf1 is None or buf2 is None:
@@ -63,6 +63,7 @@ class CBinaryToSourceImporter:
       if not from_ida:
         raise Exception("Export process can only be done from within IDA")
 
+      # self.is_old_version(self.db_filename)
       log("Exporting current database...")
       exporter = CBinaryToSourceExporter()
       exporter.export(self.db_filename)
@@ -73,6 +74,7 @@ class CBinaryToSourceImporter:
 
     self.min_level = None
     self.min_display_level = None
+    self.max_cartesian_product = 10000
     self.pseudo = {}
     self.best_matches = {}
     self.dubious_matches = {}
@@ -208,7 +210,7 @@ class CBinaryToSourceImporter:
       # ratio we get from the initial best matches (which must be false positives
       # free).
       if self.min_level == 0.0:
-        self.min_level = max(min_score - 0.3, 0.2)
+        self.min_level = min(min_score - 0.3, 0.01)
 
       if self.min_display_level == 0.0:
         self.min_display_level = max(min_score - 0.3, 0.3)
@@ -308,7 +310,7 @@ class CBinaryToSourceImporter:
       return self.get_source_callees(bin_id)
     return self.get_source_callers(bin_id)
 
-  def find_one_callgraph_match(self, src_id, bin_ea, min_level, call_type="callee"):
+  def find_one_callgraph_match(self, src_id, bin_ea, min_level, call_type="callee", iteration=1):
     cur = self.db.cursor()
     sql = "select * from functions where ea = ?"
     cur.execute(sql, (str(bin_ea), ))
@@ -318,20 +320,24 @@ class CBinaryToSourceImporter:
       src_rows = list(self.get_source_call_type(src_id, call_type))
       if src_rows is not None and len(src_rows) > 0:
         bin_rows = list(self.get_binary_call_type(bin_ea, call_type))
-        if bin_rows is not None and len(bin_rows) > 0:
-          if _DEBUG: print "Finding matches in a cartesian product of %d x %d row(s)" % (len(src_rows), len(bin_rows))
-          for src_row in src_rows:
-            for bin_row in bin_rows:
-              curr_bin_id = self.get_binary_func_id(bin_row[call_type])
-              if not curr_bin_id:
-                continue
+        if bin_rows:
+          if len(bin_rows) * len(src_rows) > self.max_cartesian_product:
+            msg = "Cartesian product finding %ss for SRC=%d/BIN=0x%08x(%s) too big (%d)..."
+            log(msg % (call_type, src_id, long(bin_ea), row["name"], len(bin_rows) * len(src_rows)))
+          elif len(bin_rows) > 0:
+            if _DEBUG: print "Finding matches in a cartesian product of %d x %d row(s)" % (len(src_rows), len(bin_rows))
+            for src_row in src_rows:
+              for bin_row in bin_rows:
+                curr_bin_id = self.get_binary_func_id(bin_row[call_type])
+                if not curr_bin_id:
+                  continue
 
-              score, reasons = self.compare_functions(src_row[call_type], curr_bin_id)
-              if score >= min_level:
-                func_name = self.get_source_func_name(src_row[call_type])
-                self.add_match(long(src_row[call_type]), bin_row[call_type],
-                               func_name, "Callgraph match (%s)" % call_type,
-                               score, reasons)
+                score, reasons = self.compare_functions(src_row[call_type], curr_bin_id)
+                if score >= min_level:
+                  func_name = self.get_source_func_name(src_row[call_type])
+                  self.add_match(long(src_row[call_type]), bin_row[call_type],
+                                 func_name, "Callgraph match (%s, iteration %d)" % (call_type, iteration),
+                                 score, reasons)
 
     cur.close()
 
@@ -385,7 +391,10 @@ class CBinaryToSourceImporter:
     i = 0
     dones = set()
     ea_dones = set()
+
     while 1:
+      t = time.time()
+
       i += 1
       log("Iteration %d, discovered a total of %d row(s)..." % (i, len(self.best_matches)))
       total = len(self.best_matches)
@@ -406,24 +415,34 @@ class CBinaryToSourceImporter:
           if i == 1 or score > 0.3 + (i * 0.1):
             self.find_nearby_functions(match_id, ea, 0.3 + (i * 0.1), i)
 
-          self.find_one_callgraph_match(match_id, ea, self.min_level, "callee")
-          self.find_one_callgraph_match(match_id, ea, self.min_level, "caller")
+          self.find_one_callgraph_match(match_id, ea, self.min_level, "callee", i)
+          self.find_one_callgraph_match(match_id, ea, self.min_level, "caller", i)
+
+          # More than 5 minutes for a single iteration is too long...
+          if time.time() - t >= 60 * 5:
+            log("Iteration took too long, continuing...")
+            break
 
       self.choose_best_matches()
-
       if len(self.best_matches) == total:
         break
 
-  def choose_best_matches(self):
+  def choose_best_matches(self, is_final = False):
     bin_d = {}
     src_d = {}
+    
+    if is_final:
+      level = self.min_display_level
+    else:
+      level = self.min_level
+
     for src_id in list(self.best_matches):
       if src_id not in self.best_matches:
         continue
 
       ea, func, heur, score, reasons = self.best_matches[src_id]
       bin_func_name = self.get_function_name(long(ea))
-      if score <= self.min_display_level or seems_false_positive(func, bin_func_name):
+      if score <= level or seems_false_positive(func, bin_func_name):
         if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
         continue
