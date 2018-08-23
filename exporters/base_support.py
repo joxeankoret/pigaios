@@ -197,17 +197,13 @@ class CBaseExporter:
                           )"""
     cur.execute(sql)
 
-    sql = """create table if not exists version(
-                          id integer primary key autoincrement,
-                          version text
-                          )"""
-    cur.execute(sql)
-
-
     sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
 
-    sql = "insert into version values (null, ?)"
+    sql = """ create table if not exists version (value text) """
+    cur.execute(sql)
+
+    sql = "insert into version values (?)"
     cur.execute(sql, (VERSION_VALUE,))
 
     cur.close()
