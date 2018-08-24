@@ -31,8 +31,9 @@ In other operating systems, like in Windows, you can install them by issuing the
 $ pip install clang-5
 $ pip install colorama
 ```
+In Windows, it's also required to install LLVM. You can use the pre-built binaries: http://releases.llvm.org/download.html
 
-There is no strong requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9. However, most of the testing have been done with version 5.0.
+NOTE: There is no strong requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9. However, most of the testing have been done with version 5.0.
 
 ## Using srctobindiff
 
