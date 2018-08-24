@@ -13,20 +13,6 @@ try:
 except:
   has_colorama = False
 
-# Check if we have support for various parsers
-try:
-  from exporters import pycparser_exporter
-  has_pycparser = True
-except ImportError:
-  has_pycparser = False
-
-try:
-  from pycparserext.ext_c_parser import GnuCParser, OpenCLCParser
-  from pycparserext.ext_c_generator import GnuCGenerator, OpenCLCGenerator
-  has_pycparserext = True
-except:
-  has_pycparserext = False
-
 try:
   from exporters import clang_exporter
   has_clang = True
@@ -98,14 +84,10 @@ class CSBDExporter:
   
   def export(self, use_clang, opencl, gnu):
     exporter = None
-    if use_clang:
-      if not has_clang:
-        raise Exception("Python CLang bindings aren't installed!")
+    if not has_clang:
+      raise Exception("Python CLang bindings aren't installed!")
+    exporter = clang_exporter.CClangExporter(self.cfg_file)
 
-      exporter = clang_exporter.CClangExporter(self.cfg_file)
-    else:
-      exporter = pycparser_exporter.CPyCParserExporter(self.cfg_file, gnu, opencl)
-      
     try:
       exporter.export()
     except KeyboardInterrupt:
@@ -132,7 +114,6 @@ def usage():
   print "-create          Create a project in the current directory and discover source files."
   print "-export          Export the current project to one SQLite database."
   print "-project <file>  Use <file> as the project filename."
-  print "-pycparser       Use 'pycparser' to parse the source files."
   print "-clang           Use the 'Clang Python bindings' to parse the source files (default)."
   print "-test            Test for the availability of exporters"
   print "-help            Show this help."
@@ -160,22 +141,11 @@ def main():
       next_project_name = True
     elif arg == "-clang":
       use_clang = True
-    elif arg == "-pycparser":
-      use_clang = False
-    elif arg == "-gnu":
-      gnu = True
-    elif arg == "-opencl":
-      opencl = True
     elif arg in ["-export", "-e"]:
       exporter = CSBDExporter(project_file)
       exporter.export(use_clang, opencl, gnu)
     elif arg in ["-test", "-t"]:
       print "Has Clang Python Bindings: %s" % has_clang
-      print "Has pycparser: %s" % has_pycparser
-      if has_pycparserext:
-        print "Has pycparserext: True (GNU and OpenCL parsers available)"
-      else:
-        print "Has pycparserext: False"
     elif arg in ["-help", "-h"]:
       usage()
     else:
