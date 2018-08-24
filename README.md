@@ -1,6 +1,6 @@
 # srctobindiff
 
-A tool for diffing source codes directly against binaries. The idea is to point a tool to a code base, regardless of it being compilable or not (for example, partial source code or source code for platforms not at your hand), extract information from that code base and, then, import in an IDA database function names (symbols), structures and enumerations. It can use either pycparser (a pure Python C parser) or, by default, the Python CLang bindings (which are very limited, but still better than using pycparser).
+A tool for diffing source codes directly against binaries. The idea is to point a tool to a code base, regardless of it being compilable or not (for example, partial source code or source code for platforms not at your hand), extract information from that code base and, then, import in an IDA database function names (symbols), structures and enumerations. It uses the Python CLang bindings (which are very limited, but still better than using pycparser).
 
 Basically, the tool does the following:
 
@@ -22,7 +22,12 @@ This project doesn't require anything but Python, however, there are some 3rd pa
 You can install in Debian based Linux distros the dependencies with the following command:
  
  ```$ sudo apt-get install clang python-clang-5.0 libclang-5.0-dev python-colorama```
- 
+
+In other operating systems, like in Windows, you can install it by issuing the following commands:
+
+ ```$ pip install clang-5
+$ pip install colorama```
+
 There is no strong requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9.
 
 ## Using srctobindiff
@@ -68,7 +73,7 @@ contrib/iostream/test.cpp = 1
 
 In this file we can see various directives:
 
- * The compiler/frontend required include headers (CLang or pycparser ones).
+ * The compiler/frontend required include headers.
  * The CFLAGS and CXXFLAGS that we want to use for parsing the source code files.
  * A list of source files and a number indicating if the files are enabled for compilation or not (1 or 0).
  
