@@ -24,7 +24,6 @@ VERSION_VALUE = "Pigaios Source Exporter 1.0"
 
 #-------------------------------------------------------------------------------
 CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp"]
-
 if has_colorama:
   COLOR_SUBSTRS  = {"CC ":Fore.GREEN,
                     "CXX ":Fore.GREEN, 
@@ -123,7 +122,7 @@ def export_log(msg):
       substr = sub
       apply_colours = True
       break
-  
+
   if not apply_colours:
     print tmp
     return
@@ -208,6 +207,9 @@ class CBaseExporter:
     sql = "create table if not exists version (version text)"
     cur.execute(sql)
 
+    sql = """ create table if not exists version (value text) """
+    cur.execute(sql)
+
     sql = "insert into version values (?)"
     cur.execute(sql, (VERSION_VALUE,))
 
@@ -255,7 +257,7 @@ class CBaseExporter:
           args = cpp_args
           msg = "[+] CXX %s %s" % (filename, " ".join(args))
           is_c = False
-        
+
         pool_args.append((filename, args, is_c,))
 
     total_cpus = cpu_count()
@@ -306,7 +308,7 @@ class CBaseExporter:
                from functions where id = ?"""
     cur.execute(sql, (func, ))
     row = cur.fetchone()
-    
+
     if close:
       cur.close()
 
@@ -359,7 +361,7 @@ class CBaseExporter:
         externals  = int(curr_func[7]) + int(inline_row[7])
         indirect   = int(curr_func[8]) + int(inline_row[8])
         _globals   = int(curr_func[9]) + int(inline_row[9])
-        
+
         sql3 = """update functions set conditions     = ?,
                                        constants      = ?,
                                        constants_json = ?,
@@ -398,7 +400,7 @@ class CBaseExporter:
                and (static = 1 or inlined = 1)"""
     cur.execute(sql)
     rows = cur.fetchall()
-    
+
     inlines = {}
     if len(rows) > 0:
       for row in rows:
