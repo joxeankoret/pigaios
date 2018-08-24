@@ -58,6 +58,8 @@ class CSBDProject:
     section = "GENERAL"
     config.add_section(section)
     clang_includes = self.resolve_clang_includes()
+    if clang_includes.find(" ") > -1:
+      clang_includes = '"%s"' % clang_includes
     config.set(section, "includes", clang_includes)
     config.set(section, "inlines", 0)
     
@@ -65,6 +67,7 @@ class CSBDProject:
     section = "PROJECT"
     config.add_section(section)
     base_path = os.path.basename(path)
+    path = path.replace("\\", "/")
     config.set(section, "cflags", "-I%s -I%s/include" % (path, path))
     config.set(section, "cxxflags", "-I%s -I%s/include" % (path, path))
     config.set(section, "export-file", "%s.sqlite" % base_path)

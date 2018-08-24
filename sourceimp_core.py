@@ -78,8 +78,20 @@ class CBinaryToSourceImporter:
     self.pseudo = {}
     self.best_matches = {}
     self.dubious_matches = {}
+    
+    self.source_names_cache = {}
+    self.source_callees_cache = {}
+    self.binary_callees_cache = {}
+    self.source_callers_cache = {}
+    self.binary_callers_cache = {}
+    self.compare_ratios = {}
+    self.binary_funcs_cache = {}
 
   def compare_functions(self, src_id, bin_id):
+    idx = "%s-%s" % (src_id, bin_id)
+    if idx in self.compare_ratios:
+      return self.compare_ratios[idx]
+
     fields = COMPARE_FIELDS
     cur = self.db.cursor()
     sql = "select %s from functions where id = ?" % ",".join(fields)
@@ -95,28 +107,28 @@ class CBinaryToSourceImporter:
     # XXX:FIXME: Try to automatically build a decission tree here?
     score = 0
     non_zero_num_matches = 0
-    for field in fields:
+    for field in COMPARE_FIELDS:
       if src_row[field] == bin_row[field] and field == "name":
-        score += 4
-        reasons.append("Same name")
+        score += 1. * len(fields)
+        reasons.append("Same function name")
       elif type(src_row[field]) in [int, long]:
         if src_row[field] == bin_row[field]:
           score += 1.1
           non_zero_num_matches += int(src_row[field] != 0)
-          reasons.append("Same %s" % field)
+          reasons.append("Same number of %s (%s)" % (field, src_row[field]))
         else:
           max_val = max(src_row[field], bin_row[field])
           min_val = min(src_row[field], bin_row[field])
           if max_val > 0 and min_val > 0:
-            tmp = (min_val * 1.0) / (max_val * 1.0)
+            tmp = (min_val * 1.0) / (max_val * 2.0)
             score += tmp
-            reasons.append("Similar %s (%f)" % (field, tmp))
+            reasons.append("Similar number of %s (%d, %d)" % (field, src_row[field], bin_row[field]))
       elif src_row[field] == bin_row[field] and field.find("_json") == -1:
         score += 1.5
-        reasons.append("Same %s" % field)
+        reasons.append("Same field %s (%s)" % (field, src_row[field]))
       elif src_row[field] == bin_row[field] and field.find("_json") > -1 and len(src_row[field]) > 4:
-        score += 5
-        reasons.append("Same %s" % field)
+        score += 1. * len(fields)
+        reasons.append("Same JSON %s (%s)" % (field, bin_row[field]))
       elif field.endswith("_json"):
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
@@ -137,8 +149,20 @@ class CBinaryToSourceImporter:
         # match is considered bad
         sub_score = -0.4
         if at_least_one_match:
-          sub_score = quick_ratio(src_json, bin_json)
-          reasons.append("Similar JSON %s (%f)" % (field, sub_score))
+          #sub_score = quick_ratio(src_json, bin_json)
+          s1 = set(src_json)
+          s2 = set(bin_json)
+          subset = s1.intersection(s2)
+          
+          if len(subset) > 0:
+            l = []
+            for tmp in list(subset):
+              if len(tmp) > 4:
+                l.append(tmp)
+            subset = set(l)
+            max_size = max(len(s1), len(s2))
+            sub_score = (len(subset) * 20.) - (max_size + len(subset)) * 1.
+            reasons.append("Similar JSON (%s)" % str(subset))
 
         score += sub_score
 
@@ -146,7 +170,9 @@ class CBinaryToSourceImporter:
     if non_zero_num_matches < 4:
       score -= 0.2
 
-    return min(score, 1.0), reasons
+    ret = min(score, 1.0), reasons
+    self.compare_ratios[idx] = ret
+    return ret
 
   def find_initial_rows(self):
     cur = self.db.cursor()
@@ -230,9 +256,12 @@ class CBinaryToSourceImporter:
       if old_score >= score:
         return
 
-    self.best_matches[match_id] = (func_ea, match_name, heur, score, ", ".join(reasons))
+    self.best_matches[match_id] = (func_ea, match_name, heur, score, reasons)
 
   def get_binary_func_id(self, ea):
+    if ea in self.binary_funcs_cache:
+      return self.binary_funcs_cache[ea]
+
     cur = self.db.cursor()
     func_id = None
     sql = """select id
@@ -244,9 +273,13 @@ class CBinaryToSourceImporter:
     if row is not None:
       func_id = row["id"]
     cur.close()
+    self.binary_funcs_cache[ea] = func_id
     return func_id
 
   def get_source_func_name(self, id):
+    if id in self.source_names_cache:
+      return self.source_names_cache[id]
+
     cur = self.db.cursor()
     func_name = None
     sql = "select name from src.functions where id = ?"
@@ -255,6 +288,7 @@ class CBinaryToSourceImporter:
     if row is not None:
       func_name = row["name"]
     cur.close()
+    self.source_names_cache[id] = func_name
     return func_name
 
   def get_source_field_name(self, id, field):
@@ -269,35 +303,51 @@ class CBinaryToSourceImporter:
     return func_name
 
   def get_source_callees(self, src_id):
+    if src_id in self.source_callees_cache:
+      return self.source_callees_cache[src_id]
+
     cur = self.db.cursor()
     sql = "select callee from src.callgraph where caller = ?"
     cur.execute(sql, (src_id, ))
     src_rows = cur.fetchall()
     cur.close()
+    self.source_callees_cache[src_id] = src_rows
     return src_rows
 
   def get_binary_callees(self, bin_id):
+    if bin_id in self.binary_callees_cache:
+      return self.binary_callees_cache[bin_id]
+
     cur = self.db.cursor()
     sql = "select callee from callgraph where caller = ?"
     cur.execute(sql, (str(bin_id), ))
     bin_rows = cur.fetchall()
     cur.close()
+    self.binary_callees_cache[bin_id] = bin_rows
     return bin_rows
 
   def get_source_callers(self, src_id):
+    if src_id in self.source_callers_cache:
+      return self.source_callers_cache[src_id]
+
     cur = self.db.cursor()
     sql = "select caller from src.callgraph where callee = ?"
     cur.execute(sql, (src_id, ))
     src_rows = cur.fetchall()
     cur.close()
+    self.source_callers_cache[src_id] = src_rows
     return src_rows
 
   def get_binary_callers(self, bin_id):
+    if bin_id in self.binary_callers_cache:
+      return self.binary_callers_cache[bin_id]
+
     cur = self.db.cursor()
     sql = "select caller from callgraph where callee = ?"
     cur.execute(sql, (str(bin_id), ))
     bin_rows = cur.fetchall()
     cur.close()
+    self.binary_callers_cache[bin_id] = bin_rows
     return bin_rows
 
   def get_binary_call_type(self, bin_id, call_type):

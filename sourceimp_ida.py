@@ -11,8 +11,9 @@ import sqlite3
 from subprocess import Popen, PIPE, STDOUT
 
 from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
-                    get_func, decompile, tag_remove, show_wait_box,
-                    hide_wait_box, replace_wait_box, askyn_c)
+                    get_func, decompile, tag_remove, show_wait_box, info,
+                    hide_wait_box, replace_wait_box, askyn_c, reg_read_string,
+                    reg_write_string)
 
 import sourceimp_core
 reload(sourceimp_core)
@@ -219,7 +220,7 @@ class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches, importer_obj):
     self.importer = importer_obj
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 20], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 25], ]
     if _DEBUG:
       self.columns.append(["FP?", 6])
       self.columns.append(["Reasons", 40])
@@ -235,7 +236,7 @@ class CDiffChooser(Choose2):
     for i, match in enumerate(matches):
       ea, name, heuristic, score, reason = matches[match]
       bin_func_name = GetFunctionName(long(ea))
-      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), heuristic]
+      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), heuristic, reason]
       if _DEBUG:
         maybe_false_positive = int(seems_false_positive(name, bin_func_name))
         line.append(str(maybe_false_positive))
@@ -256,6 +257,7 @@ class CDiffChooser(Choose2):
     else:
       self.cmd_diff_c = self.AddCommand("Diff pseudo-code")
 
+    self.cmd_show_reasons = self.AddCommand("Show match reasons")
     self.cmd_import_all = self.AddCommand("Import all functions")
     self.cmd_import_selected = self.AddCommand("Import selected functions")
 
@@ -299,7 +301,29 @@ class CDiffChooser(Choose2):
     self.selected_items = sel_list
 
   def OnCommand(self, n, cmd_id):
-    if cmd_id == self.cmd_diff_c:
+    if cmd_id == self.cmd_show_reasons:
+      match = self.items[n]
+      reasons = match[len(match)-1]
+      msg = "\n".join(reasons)
+      info(msg)
+    elif cmd_id == self.cmd_import_all:
+      if askyn_c(0, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
+        import_items = []
+        for item in self.items:
+          src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
+          import_items.append([src_id, src_name, bin_ea])
+
+        self.importer.import_items(import_items)
+    elif cmd_id == self.cmd_import_selected:
+      if len(self.selected_items) == 1 or askyn_c(1, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
+        import_items = []
+        for index in self.selected_items:
+          item = self.items[index]
+          src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
+          import_items.append([src_id, src_name, bin_ea])
+
+        self.importer.import_items(import_items)
+    elif cmd_id == self.cmd_diff_c:
       html_diff = CHtmlDiff()
       item = self.items[n]
 
@@ -323,29 +347,12 @@ class CDiffChooser(Choose2):
       buf1 = indent_source(row[0])
       buf2 = proto
       buf2 += "\n".join(self.differ.pseudo[ea])
-      buf2 = indent_source(buf2)
-      src = html_diff.make_file(buf2.split("\n"), buf1.split("\n"))
+      new_buf = indent_source(buf2)
+      src = html_diff.make_file(new_buf.split("\n"), buf1.split("\n"))
 
       title = "Diff pseudo-source %s - %s" % (item[2], item[4])
       cdiffer = CHtmlViewer()
       cdiffer.Show(src, title)
-    elif cmd_id == self.cmd_import_all:
-      if askyn_c(1, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
-        import_items = []
-        for item in self.items:
-          src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
-          import_items.append([src_id, src_name, bin_ea])
-
-        self.importer.import_items(import_items)
-    elif cmd_id == self.cmd_import_selected:
-      if len(self.selected_items) == 1 or askyn_c(1, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
-        import_items = []
-        for index in self.selected_items:
-          item = self.items[index]
-          src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
-          import_items.append([src_id, src_name, bin_ea])
-
-        self.importer.import_items(import_items)
 
 #-------------------------------------------------------------------------------
 class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
@@ -361,7 +368,12 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     if f is None:
       return False
 
-    cfunc = decompile(f);
+    try:
+      cfunc = decompile(f)
+    except:
+      Warning("Error decompiling function: %s" % str(sys.exc_info())[1])
+      return False
+
     if cfunc is None:
       # Failed to decompile
       return False
@@ -389,12 +401,15 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     return GetFunctionName(ea)
 
   def import_src(self, src_db):
+    matches = False
     self.db.execute('attach "%s" as src' % src_db)
-
     if self.find_initial_rows():
       self.find_callgraph_matches()
-      self.choose_best_matches()
-
+      self.choose_best_matches(is_final = True)
+      if len(self.best_matches) > 0:
+        matches = True
+    
+    if matches:
       c = CDiffChooser(self, "Matched functions", self.best_matches, self)
       c.show()
 
@@ -404,7 +419,7 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     else:
       Warning("No matches found.")
       log("No matches found.")
-  
+
   def import_items(self, import_items):
     for src_id, src_name, bin_ea in import_items:
       bin_name = GetFunctionName(bin_ea)
@@ -422,7 +437,8 @@ def main():
   x.Compile()
   x.iMinLevel.value = "0.0"
   x.iMinDisplayLevel.value = "0.0"
-  x.iIndentCommand.value = "indent -kr -ci2 -cli2 -i2 -l80 -nut"
+  indent_cmd = reg_read_string("PIGAIOS", "indent-cmd", "indent -kr -ci2 -cli2 -i2 -l80 -nut")
+  x.iIndentCommand.value = indent_cmd
 
   if not x.Execute():
     return
@@ -432,6 +448,7 @@ def main():
     database = x.iFileOpen.value
     min_level = float(x.iMinLevel.value)
     min_display_level = float(x.iMinDisplayLevel.value)
+    reg_write_string("PIGAIOS", x.iIndentCommand.value, "indent-cmd")
     lexer = shlex.shlex(x.iIndentCommand.value)
     lexer.wordchars += "-"
     indent_cmd = list(lexer)
@@ -446,9 +463,17 @@ def main():
 if __name__ == "__main__":
   try:
     try:
-      main()
+      if os.getenv("DIAPHORA_PROFILE") is not None:
+        import cProfile
+        profiler = cProfile.Profile()
+        profiler.runcall(main)
+        exported = True
+        profiler.print_stats(sort="time")
+      else:
+        main()
     except:
       log("ERROR: %s" % str(sys.exc_info()[1]))
       raise
   finally:
     hide_wait_box()
+

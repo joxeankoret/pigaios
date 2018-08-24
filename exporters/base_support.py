@@ -24,10 +24,12 @@ VERSION_VALUE = "Pigaios Source Exporter 1.0"
 
 #-------------------------------------------------------------------------------
 CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp"]
-COLOR_SUBSTRS  = {"CC ":Fore.GREEN,
-                 "CXX ":Fore.GREEN, 
-                 " warning:":Fore.RED, " error:":Fore.RED,
-                 " fatal:":Fore.RED}
+
+if has_colorama:
+  COLOR_SUBSTRS  = {"CC ":Fore.GREEN,
+                    "CXX ":Fore.GREEN, 
+                    " warning:":Fore.RED, " error:":Fore.RED,
+                    " fatal:":Fore.RED}
 
 #-------------------------------------------------------------------------------
 def is_source_file(arg):
@@ -197,7 +199,13 @@ class CBaseExporter:
                           )"""
     cur.execute(sql)
 
-    sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
+    sql = """ create unique index if not exists idx_callgraph_caller on callgraph (caller) """
+    cur.execute(sql)
+
+    sql = """ create unique index if not exists idx_callgraph_callee on callgraph (callee) """
+    cur.execute(sql)
+
+    sql = "create table if not exists version (version text)"
     cur.execute(sql)
 
     sql = "insert into version values (?)"
