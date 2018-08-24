@@ -21,12 +21,16 @@ This project doesn't require anything but Python, however, there are some 3rd pa
  
 You can install in Debian based Linux distros the dependencies with the following command:
  
- ```$ sudo apt-get install clang python-clang-5.0 libclang-5.0-dev python-colorama```
+```
+$ sudo apt-get install clang python-clang-5.0 libclang-5.0-dev python-colorama
+```
 
 In other operating systems, like in Windows, you can install it by issuing the following commands:
 
- ```$ pip install clang-5
-$ pip install colorama```
+```
+$ pip install clang-5
+$ pip install colorama
+```
 
 There is no strong requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9.
 
