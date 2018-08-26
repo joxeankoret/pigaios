@@ -14,12 +14,7 @@ Basically, the tool does the following:
 
 ## Requirements
 
-This project require installing some 3rd party components and others are recommended:
-
- * Required: CLang Python bindings.
- * Recommended: Python Colorama.
- 
-You can install in Debian based Linux distros the dependencies with the following command:
+This project requires the installation of the CLang's Python bindings and Colorama is required for displaying colours. You can install in Debian based Linux distros the dependencies with the following command:
  
 ```
 $ sudo apt-get install clang python-clang-5.0 libclang-5.0-dev python-colorama
