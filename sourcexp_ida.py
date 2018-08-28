@@ -13,7 +13,7 @@ from idautils import *
 from others.tarjan_sort import strongly_connected_components
 
 #-------------------------------------------------------------------------------
-VERSION_VALUE = "Pigaios IDA Exporter 1.0"
+VERSION_VALUE = "Pigaios IDA Exporter 1.1"
 
 #-------------------------------------------------------------------------------
 BANNED_FUNCTIONS = ['__asprintf_chk',
@@ -192,6 +192,7 @@ class CBinaryToSourceExporter:
                           switchs_json text,
                           calls integer,
                           externals integer,
+                          callees_json text,
                           recursive integer,
                           indirects integer,
                           globals   integer)"""
@@ -299,6 +300,7 @@ class CBinaryToSourceExporter:
     externals = set()
     switches = []
     calls = set()
+    callees = {}
     loops = 0
     recursive = False
     indirects = 0
@@ -353,6 +355,11 @@ class CBinaryToSourceExporter:
               if func_obj.startEA != func.startEA:
                 tmp_ea = xrefs[0]
                 calls.add(tmp_ea)
+                name = GetFunctionName(tmp_ea)
+                try:
+                  callees[name] += 1
+                except:
+                  callees[name] = 1
               else:
                 recursive = True
 
@@ -379,6 +386,7 @@ class CBinaryToSourceExporter:
       print "Constants   : %d" % len(constants)
       print "Switches    : %d" % len(switches)
       print "Calls       : %s" % len(calls)
+      print "Callees     : %s" % len(callees)
       print "Loops       : %d" % loops
       print "Globals     : %d" % len(externals)
       print "Recursive   : %d" % recursive
@@ -391,13 +399,14 @@ class CBinaryToSourceExporter:
                          ea, name, prototype, prototype2, conditions,
                          constants, constants_json, loops, switchs,
                          switchs_json, calls, externals, recursive,
-                         indirects, globals
+                         indirects, globals, callees_json
                          )
-                         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
     args = (str(f), func_name, prototype, prototype2, conditions,
             len(constants), json.dumps(list(constants)), loops, len(switches),
             json.dumps(list(switches)), len(calls), len(list(externals)),
-            recursive, int(indirects), len(globals_uses))
+            recursive, int(indirects), len(globals_uses),
+            json.dumps(callees))
     rowid = cur.execute(sql, args)
 
     sql = "insert into callgraph (caller, callee) values (?, ?)"

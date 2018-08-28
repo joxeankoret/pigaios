@@ -53,6 +53,7 @@ class CSBDProject:
     section = "PROJECT"
     config.add_section(section)
     base_path = os.path.basename(path)
+    path = os.path.relpath(path)
     path = path.replace("\\", "/")
     config.set(section, "cflags", "-I%s -I%s/include" % (path, path))
     config.set(section, "cxxflags", "-I%s -I%s/include" % (path, path))
@@ -79,17 +80,22 @@ class CSBDProject:
 
 #-------------------------------------------------------------------------------
 class CSBDExporter:
-  def __init__(self, cfg_file):
+  def __init__(self, cfg_file, parallel = False):
     self.cfg_file = cfg_file
-  
-  def export(self, use_clang, opencl, gnu):
+    self.parallel = parallel
+
+  def export(self, use_clang):
     exporter = None
     if not has_clang:
       raise Exception("Python CLang bindings aren't installed!")
     exporter = clang_exporter.CClangExporter(self.cfg_file)
+    exporter.parallel = self.parallel
 
     try:
-      exporter.export()
+      if not self.parallel:
+        exporter.export()
+      else:
+        exporter.export_parallel()
     except KeyboardInterrupt:
       print "Aborted."
       return
@@ -111,21 +117,22 @@ def usage():
   print
   print "Options:"
   print
-  print "-create          Create a project in the current directory and discover source files."
-  print "-export          Export the current project to one SQLite database."
-  print "-project <file>  Use <file> as the project filename."
-  print "-clang           Use the 'Clang Python bindings' to parse the source files (default)."
-  print "-test            Test for the availability of exporters"
-  print "-help            Show this help."
+  print "-create            Create a project in the current directory and discover source files."
+  print "-export            Export the current project to one SQLite database."
+  print "-project <file>    Use <file> as the project filename."
+  print "-clang             Use the 'Clang Python bindings' to parse the source files (default)."
+  print "-parallel          Parallelize the compilation process (slower for small code bases)."
+  print "--profile-export   Execute the command and show profiling data."
+  print "-test              Test for the availability of exporters"
+  print "-help              Show this help."
   print
 
 #-------------------------------------------------------------------------------
 def main():
   use_clang = True
-  opencl = False
-  gnu = False
   project_file = DEFAULT_PROJECT_FILE
   next_project_name = False
+  parallel = False
 
   for arg in sys.argv[1:]:
     if next_project_name:
@@ -142,10 +149,19 @@ def main():
     elif arg == "-clang":
       use_clang = True
     elif arg in ["-export", "-e"]:
-      exporter = CSBDExporter(project_file)
-      exporter.export(use_clang, opencl, gnu)
+      exporter = CSBDExporter(project_file, parallel)
+      exporter.export(use_clang)
+    elif arg in ["-p", "--profile-export"]:
+      import cProfile
+      profiler = cProfile.Profile()
+      exporter = CSBDExporter(project_file, parallel)
+      profiler.runcall(exporter.export, (use_clang,))
+      exported = True
+      profiler.print_stats(sort="time")
     elif arg in ["-test", "-t"]:
       print "Has Clang Python Bindings: %s" % has_clang
+    elif arg in ["-parallel"]:
+      parallel = True
     elif arg in ["-help", "-h"]:
       usage()
     else:

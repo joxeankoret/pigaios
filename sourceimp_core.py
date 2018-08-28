@@ -29,7 +29,8 @@ _DEBUG=False
 
 #-------------------------------------------------------------------------------
 COMPARE_FIELDS = ["name", "conditions", "constants_json", "loops", "switchs",
-                  "switchs_json", "calls", "externals", "recursive", "globals"]
+                  "switchs_json", "calls", "externals", "recursive", "globals",
+                  "callees_json"]
 
 COMPARE_WEIGHTS = {"name":4, "conditions":1.1, "constants_json":2, "loops":1.1,
   "switchs":1.1, "switchs_json":2, "calls":1.1, "externals":1.1, "globals":1.1,
@@ -58,16 +59,8 @@ def seems_false_positive(src_name, bin_name):
 class CBinaryToSourceImporter:
   def __init__(self, db_path):
     self.debug = False
-    self.db_filename = os.path.splitext(db_path)[0] + "-src.sqlite"
-    if not os.path.exists(self.db_filename):
-      if not from_ida:
-        raise Exception("Export process can only be done from within IDA")
-
-      # self.is_old_version(self.db_filename)
-      log("Exporting current database...")
-      exporter = CBinaryToSourceExporter()
-      exporter.export(self.db_filename)
-
+    self.db_path = db_path
+    self.open_or_create_database()
     self.db = sqlite3.connect(self.db_filename)
     self.db.text_factory = str
     self.db.row_factory = sqlite3.Row
@@ -87,10 +80,20 @@ class CBinaryToSourceImporter:
     self.compare_ratios = {}
     self.binary_funcs_cache = {}
 
+    self.being_compared = []
+
   def compare_functions(self, src_id, bin_id):
+    # XXX: FIXME: This function should be properly "handled"! It kind of works
+    # but is extremely hard to explain why or how.
     idx = "%s-%s" % (src_id, bin_id)
     if idx in self.compare_ratios:
-      return self.compare_ratios[idx]
+      score, reasons = self.compare_ratios[idx]
+      if reasons is not None:
+        return score, reasons
+
+    if src_id in self.being_compared:
+      return 0.0, None
+    self.being_compared.append(src_id)
 
     fields = COMPARE_FIELDS
     cur = self.db.cursor()
@@ -103,6 +106,7 @@ class CBinaryToSourceImporter:
     src_row = cur.fetchone()
     cur.close()
 
+    vals = set()
     reasons = []
     # XXX:FIXME: Try to automatically build a decission tree here?
     score = 0
@@ -116,6 +120,7 @@ class CBinaryToSourceImporter:
           score += 1.1
           non_zero_num_matches += int(src_row[field] != 0)
           reasons.append("Same number of %s (%s)" % (field, src_row[field]))
+          vals.add(src_row[field])
         else:
           max_val = max(src_row[field], bin_row[field])
           min_val = min(src_row[field], bin_row[field])
@@ -129,7 +134,7 @@ class CBinaryToSourceImporter:
       elif src_row[field] == bin_row[field] and field.find("_json") > -1 and len(src_row[field]) > 4:
         score += 1. * len(fields)
         reasons.append("Same JSON %s (%s)" % (field, bin_row[field]))
-      elif field.endswith("_json"):
+      elif field == "constants_json":
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
         at_least_one_match = False
@@ -161,18 +166,81 @@ class CBinaryToSourceImporter:
                 l.append(tmp)
             subset = set(l)
             max_size = max(len(s1), len(s2))
-            sub_score = (len(subset) * 20.) - (max_size + len(subset)) * 1.
-            reasons.append("Similar JSON (%s)" % str(subset))
+            per_match_score = 20.
+            per_miss_score = 1.0
+            if field == "callees_json":
+              per_match_score = 5.
+              per_miss_score = 2.
+            sub_score = (len(subset) * per_match_score) - (max_size + len(subset)) * per_miss_score
+            reasons.append("Similar JSON %s (%s)" % (field, str(subset)))
 
         score += sub_score
+      elif field == "callees_json":
+        src_json = json.loads(src_row[field])
+        bin_json = json.loads(bin_row[field])
+        if len(src_json) > 0 and len(bin_json) > 0 and len(src_json) == len(bin_json):
+          # Try to match callees that we haven't identified yet between the list
+          # of callees in the source and in the binary.
+          bin_json = self.get_clean_functions_dict(bin_json)
+          src_funcs = set(src_json).difference(set(bin_json))
+          bin_funcs = set(bin_json).difference(set(src_json))
+          sub_dones = set()
+          for src_key in src_funcs:
+            # Once we have a perfect match (ratio == 1.0) we don't need to do
+            # anything else for that function.
+            if src_key in sub_dones:
+              continue
 
+            for bin_key in bin_funcs:
+              if not bin_key.startswith("sub_"):
+                continue
+
+              if src_key != src_row["name"] and src_key not in sub_dones:
+                # Due to how the source code exporters work, we may have many
+                # different functions with the same name. As so, we need to get
+                # a list of all IDs for that specific name.
+                sub_src_ids = self.get_source_ids("name", src_key)
+                sub_bin_id, sub_bin_ea = self.get_binary_id_ea("name", bin_key)
+                for sub_src_id in sub_src_ids:
+                  if src_key in sub_dones:
+                    break
+
+                  # Add a match for every single pair, we will remove the bad
+                  # ones later on at choose_best_matches().
+                  sub_ratio, sub_reasons = self.compare_functions(sub_src_id, sub_bin_id)
+                  self.add_match(sub_src_id, sub_bin_ea, str(src_key), "Specific callee search", sub_ratio, sub_reasons)
+                  if sub_ratio == 1.0:
+                    # If we found a perfect match finding callees, chances are
+                    # that this match is good.
+                    reasons.append("Found a pefect callee match (%s)" % src_key)
+                    score += 3.
+                    sub_dones.add(src_key)
+                    break
+
+    self.being_compared.remove(src_id)
+
+    # If every numeric field matched equals to zero, it's most likely a false
+    # positive due to a bug in an exporter that is exporting empty functions.
+    if len(vals) == 1 and vals.pop() == 0:
+      score = 0.0
+
+    # If we have too many numeric matches that are just zero, lower the given
+    # score.
     score = (score * 1.0) / len(fields)
     if non_zero_num_matches < 4:
       score -= 0.2
 
+    # ...and finally adjust the score.
     ret = min(score, 1.0), reasons
     self.compare_ratios[idx] = ret
     return ret
+
+  def get_clean_functions_dict(self, bin_json):
+    d = {}
+    for key in bin_json:
+      new_key = key.strip(".")
+      d[new_key] = bin_json[key]
+    return d
 
   def find_initial_rows(self):
     cur = self.db.cursor()
@@ -236,10 +304,10 @@ class CBinaryToSourceImporter:
       # ratio we get from the initial best matches (which must be false positives
       # free).
       if self.min_level == 0.0:
-        self.min_level = min(min_score - 0.3, 0.01)
+        self.min_level = min(abs(min_score - 0.3), 0.01)
 
       if self.min_display_level == 0.0:
-        self.min_display_level = max(min_score - 0.3, 0.3)
+        self.min_display_level = max(abs(min_score - 0.3), 0.3)
 
     log("Minimum score for calculations: %f" % self.min_level)
     log("Minimum score to show results : %f" % self.min_display_level)
@@ -257,6 +325,19 @@ class CBinaryToSourceImporter:
         return
 
     self.best_matches[match_id] = (func_ea, match_name, heur, score, reasons)
+
+  def get_binary_id_ea(self, field, value):
+    cur = self.db.cursor()
+    id = None
+    ea = None
+    sql = "select id, ea from functions where %s = ?" % field
+    cur.execute(sql, (value, ))
+    row = cur.fetchone()
+    if row is not None:
+      id = row["id"]
+      ea = row["ea"]
+    cur.close()
+    return id, ea
 
   def get_binary_func_id(self, ea):
     if ea in self.binary_funcs_cache:
@@ -291,16 +372,26 @@ class CBinaryToSourceImporter:
     self.source_names_cache[id] = func_name
     return func_name
 
+  def get_source_ids(self, field, value):
+    l = []
+    cur = self.db.cursor()
+    sql = "select id from src.functions where %s = ?" % field
+    cur.execute(sql, (value, ))
+    for row in cur.fetchall():
+      l.append(row["id"])
+    cur.close()
+    return l
+
   def get_source_field_name(self, id, field):
     cur = self.db.cursor()
-    func_name = None
+    val = None
     sql = "select %s from src.functions where id = ?" % field
     cur.execute(sql, (id, ))
     row = cur.fetchone()
     if row is not None:
-      func_name = row[field]
+      val = row[field]
     cur.close()
-    return func_name
+    return val
 
   def get_source_callees(self, src_id):
     if src_id in self.source_callees_cache:

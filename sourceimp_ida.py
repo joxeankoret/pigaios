@@ -19,7 +19,7 @@ import sourceimp_core
 reload(sourceimp_core)
 
 from sourceimp_core import *
-from sourcexp_ida import log, CBinaryToSourceExporter
+from sourcexp_ida import log, CBinaryToSourceExporter, VERSION_VALUE
 
 #-------------------------------------------------------------------------------
 _DEBUG = False
@@ -315,7 +315,7 @@ class CDiffChooser(Choose2):
 
         self.importer.import_items(import_items)
     elif cmd_id == self.cmd_import_selected:
-      if len(self.selected_items) == 1 or askyn_c(1, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
+      if len(self.selected_items) == 1 or askyn_c(1, "HIDECANCEL\nDo you really want to import the selected functions?") == 1:
         import_items = []
         for index in self.selected_items:
           item = self.items[index]
@@ -344,6 +344,7 @@ class CDiffChooser(Choose2):
         Warning("Cannot decompile function 0x%08x" % ea)
         return False
 
+      #print "Diffing", row[0], type(row[0]), ea, type(ea)
       buf1 = indent_source(row[0])
       buf2 = proto
       buf2 += "\n".join(self.differ.pseudo[ea])
@@ -358,6 +359,37 @@ class CDiffChooser(Choose2):
 class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
   def __init__(self):
     CBinaryToSourceImporter.__init__(self, GetIdbPath())
+    show_wait_box("Diffing...")
+
+  def different_versions(self):
+    ret = False
+    db = sqlite3.connect(self.db_filename)
+    cur = db.cursor()
+    sql = "select value from version"
+    cur.execute(sql)
+    row = cur.fetchone()
+    if row:
+      version = row[0]
+      if version != VERSION_VALUE:
+        msg  = "HIDECANCEL\nDatabase version (%s) is different to current version (%s).\n"
+        msg += "Do you want to re-create the database?"
+        msg += "\n\nNOTE: Selecting 'NO' will try to use the non updated database."
+        if askyn_c(0, msg % (version, VERSION_VALUE)) == 1:
+          ret = True
+
+    cur.close()
+    return ret
+
+  def open_or_create_database(self):
+    self.db_filename = os.path.splitext(self.db_path)[0] + "-src.sqlite"
+    if not os.path.exists(self.db_filename) or self.different_versions():
+      if not from_ida:
+        raise Exception("Export process can only be done from within IDA")
+
+      # self.is_old_version(self.db_filename)
+      log("Exporting current database...")
+      exporter = CBinaryToSourceExporter()
+      exporter.export(self.db_filename)
 
   def decompile_and_get(self, ea):
     decompiler_plugin = get_decompiler_plugin()

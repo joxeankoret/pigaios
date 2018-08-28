@@ -10,8 +10,9 @@ import ConfigParser
 
 from terminalsize import get_terminal_size
 
-from multiprocessing import cpu_count
+from threading import Lock
 from multiprocessing.pool import ThreadPool
+from multiprocessing import cpu_count, Manager
 
 try:
   from colorama import init, Fore, colorama_text
@@ -109,28 +110,29 @@ def truncate_str(data):
   return (data[:size] + '..') if len(data) > size else data
 
 #-------------------------------------------------------------------------------
+print_lock = Lock()
 def export_log(msg):
   tmp = truncate_str(msg)
-  if not has_colorama:
-    print tmp
-    return
+  print_str = tmp
+  if has_colorama:
+    apply_colours = False
+    substr = None
+    for sub in COLOR_SUBSTRS:
+      if tmp.find(sub) > -1:
+        substr = sub
+        apply_colours = True
+        break
 
-  apply_colours = False
-  substr = None
-  for sub in COLOR_SUBSTRS:
-    if tmp.find(sub) > -1:
-      substr = sub
-      apply_colours = True
-      break
+    if apply_colours:
+      with colorama_text():
+        pos1 = tmp.find(substr)
+        pos2 = pos1 + len(substr)
+        print_str = Fore.RESET + tmp[:pos1] + COLOR_SUBSTRS[substr] + tmp[pos1:pos2] + Fore.RESET + tmp[pos2:]
 
-  if not apply_colours:
-    print tmp
-    return
-
-  with colorama_text():
-    pos1 = tmp.find(substr)
-    pos2 = pos1 + len(substr)
-    print(Fore.RESET + tmp[:pos1] + COLOR_SUBSTRS[substr] + tmp[pos1:pos2] + Fore.RESET + tmp[pos2:])
+  global print_lock
+  print_lock.acquire()
+  print(print_str)
+  print_lock.release()
 
 #-------------------------------------------------------------------------------
 def all_combinations(items):
@@ -151,6 +153,7 @@ class CBaseExporter:
     self.config.read(cfg_file)
     self.db = None
     self.create_schema(self.config.get('PROJECT', 'export-file'))
+    self.parallel = False
 
     self.warnings = 0
     self.errors = 0
@@ -182,7 +185,7 @@ class CBaseExporter:
                           switchs_json text,
                           calls integer,
                           externals integer,
-                          callees text,
+                          callees_json text,
                           source text,
                           recursive integer,
                           indirect integer,
@@ -198,10 +201,7 @@ class CBaseExporter:
                           )"""
     cur.execute(sql)
 
-    sql = """ create unique index if not exists idx_callgraph_caller on callgraph (caller) """
-    cur.execute(sql)
-
-    sql = """ create unique index if not exists idx_callgraph_callee on callgraph (callee) """
+    sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
 
     sql = "create table if not exists version (version text)"
@@ -215,6 +215,12 @@ class CBaseExporter:
 
     cur.close()
     return self.db
+
+  def insert_row(self, sql, args, cur):
+    if not self.parallel:
+      cur.execute(sql, args)
+    else:
+      self.to_insert_rows.append([sql, args])
 
   def do_export_one(self, args_list):
     filename, args, is_c = args_list
@@ -232,6 +238,7 @@ class CBaseExporter:
       msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
       export_log(msg)
       self.fatals += 1
+      raise
 
   def export_parallel(self):
     c_args = ["-I%s" % self.config.get('GENERAL', 'includes')]
@@ -261,13 +268,37 @@ class CBaseExporter:
         pool_args.append((filename, args, is_c,))
 
     total_cpus = cpu_count()
-    pool = ThreadPool(total_cpus)
-    pool.map(self.do_export_one, pool_args)
+    export_log("Using a total of %d thread(s)" % total_cpus)
+    cur = self.db.cursor()
+    cur.execute("PRAGMA synchronous = OFF")
+    cur.execute("PRAGMA journal_mode = MEMORY")
+    cur.execute("PRAGMA threads = %d" % total_cpus)
+
+    with Manager() as manager:
+      self.to_insert_rows = manager.list()
+      pool = ThreadPool(total_cpus)
+      pool.map(self.do_export_one, pool_args)
+
+      args = []
+      sql = None
+      while len(self.to_insert_rows) > 0:
+        tmp_sql, arg = self.to_insert_rows.pop()
+        sql = tmp_sql
+        args.append(arg)
+
+      cur.executemany(sql, args)
+
+    cur.close()
+
+    self.final_steps()
 
   def build_callgraphs(self, cur):
     export_log("[+] Building the callgraphs...")
     functions_cache = {}
-    sql = "select id, name, callees from functions where calls > 0"
+    
+    cur.execute("BEGIN")
+
+    sql = "select id, name, callees_json from functions where calls > 0"
     cur.execute(sql)
     for row in list(cur.fetchall()):
       func_id = row[0]
@@ -285,9 +316,13 @@ class CBaseExporter:
           try:
             cur2.execute(sql, (str(func_id), str(row[0])))
             cur2.close()
+          except KeyboardInterrupt:
+            raise
           except:
             # Ignore unique constraint violations
             print "final_steps():", str(sys.exc_info()[1])
+
+    cur.execute("COMMIT")
 
   def create_indexes(self, cur):
     export_log("[+] Creating indexes...")
@@ -409,8 +444,9 @@ class CBaseExporter:
         except:
           inlines[row[0]] = [[row[1], row[3]]]
 
-    cur.execute("PRAGMA synchronous = OFF")
-    cur.execute("BEGIN")
+    if not self.parallel:
+      cur.execute("BEGIN")
+
     dones = set()
     export_log("[+] Found %d candidate inlined function(s)" % len(inlines))
     for func in inlines:
@@ -431,14 +467,20 @@ class CBaseExporter:
       for per in pers:
         self.create_inline(cur, func, per)
 
-    cur.execute("COMMIT")
+    if not self.parallel:
+      cur.execute("COMMIT")
+
     cur.close()
 
   def final_steps(self):
     cur = self.db.cursor()
     self.build_callgraphs(cur)
-    if int(self.config.get('GENERAL', 'inlines')) == 1:
-      self.build_inlines(cur)
+    try:
+      if int(self.config.get('GENERAL', 'inlines')) == 1:
+        self.build_inlines(cur)
+    except:
+      print "Error:", str(sys.exc_info()[1])
+
     self.create_indexes(cur)
     cur.close()
 

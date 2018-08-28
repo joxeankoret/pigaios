@@ -66,7 +66,7 @@ class CCLangVisitor:
     self.name = name
     self.loops = 0
     self.enums = {}
-    self.calls = set()
+    self.calls = {}
     self.switches = []
     self.constants = set()
     self.externals = set()
@@ -181,7 +181,11 @@ class CCLangVisitor:
         if token != cursor.spelling:
           self.indirects.append(cursor.spelling)
 
-    self.calls.add(cursor.spelling)
+    spelling = cursor.spelling
+    try:
+      self.calls[cursor.spelling] += 1
+    except:
+      self.calls[cursor.spelling] = 1
 
   def visit_loop(self, cursor):
     #print "Visiting LOOP"
@@ -340,8 +344,9 @@ class CClangExporter(CBaseExporter):
     self.fatals += parser.fatals
 
     with self.db as cur:
-      cur.execute("PRAGMA synchronous = OFF")
-      cur.execute("BEGIN transaction")
+      if not self.parallel:
+        cur.execute("PRAGMA synchronous = OFF")
+        cur.execute("BEGIN transaction")
 
       for element in parser.tu.cursor.get_children():
         fileobj = element.location.file
@@ -376,7 +381,7 @@ class CClangExporter(CBaseExporter):
                                  ea, name, prototype, prototype2, conditions,
                                  constants, constants_json, loops, switchs,
                                  switchs_json, calls, externals, filename,
-                                 callees, source, recursive, indirect, globals,
+                                 callees_json, source, recursive, indirect, globals,
                                  inlined, static)
                                values
                                  ((select count(ea)+1 from functions),
@@ -385,10 +390,11 @@ class CClangExporter(CBaseExporter):
           args = (obj.name, prototype, prototype2, obj.conditions,
                   len(obj.constants), json.dumps(list(obj.constants)),
                   obj.loops, len(obj.switches), json.dumps(list(obj.switches)),
-                  len(obj.calls), len(obj.externals),
-                  filename, json.dumps(list(obj.calls)), source, obj.recursive,
+                  len(obj.calls.keys()), len(obj.externals),
+                  filename, json.dumps(obj.calls), source, obj.recursive,
                   len(obj.indirects), len(obj.globals_uses), obj.is_inlined,
-                  obj.is_static)
-          cur.execute(sql, args)
+                  obj.is_static, )
+          self.insert_row(sql, args, cur)
 
-      cur.execute("COMMIT")
+      if not self.parallel:
+        cur.execute("COMMIT")
