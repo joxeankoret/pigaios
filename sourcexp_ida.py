@@ -460,7 +460,9 @@ def main():
 
 if __name__ == "__main__":
   try:
+    idaapi.autoWait()
     main()
+    idaapi.qexit(0)
   except:
     log("ERROR: %s" % str(sys.exc_info()[1]))
     raise

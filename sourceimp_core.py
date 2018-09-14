@@ -82,6 +82,57 @@ class CBinaryToSourceImporter:
 
     self.being_compared = []
 
+  def get_compare_functions_data(self, src_id, bin_id, heur):
+    """
+    Generate a dictionary with data about the functions being compared that we
+    can use for determining later on if the match is good or bad. Most likely,
+    for throwing it to a neural network.
+
+    NOTE: For JSON string fields we generate 3 fields: the number of elements in
+    the JSON, the number of elements matched and the number of non-matched 
+    elements.
+    """
+    ret = {"heuristic": int(heur)}
+
+    fields = COMPARE_FIELDS
+    cur = self.db.cursor()
+    sql = "select %s from functions where id = ?" % ",".join(fields)
+    cur.execute(sql, (bin_id,))
+    bin_row = cur.fetchone()
+
+    sql = "select %s from src.functions where id = ?" % ",".join(fields)
+    cur.execute(sql, (src_id,))
+    src_row = cur.fetchone()
+    cur.close()
+
+    for field in COMPARE_FIELDS:
+      if field == "name":
+        ret["accurate"] = src_row[field] == bin_row[field]
+        continue
+
+      if type(src_row[field]) in [int, long]:
+        ret[field] = int(src_row[field] == bin_row[field])
+      elif field.endswith("_json"):
+        src_json = json.loads(src_row[field])
+        bin_json = json.loads(bin_row[field])
+        
+        src_total = len(src_json)
+        bin_total = len(bin_json)
+        
+        s1 = set(src_json)
+        s2 = set(bin_json)
+        non_matched = s2.difference(s1).union(s1.difference(s2))
+        matched     = s1.intersection(s2)
+
+        ret["%s_src_total" % field]   = src_total
+        ret["%s_bin_total" % field]   = bin_total
+        ret["%s_matched" % field]     = matched
+        ret["%s_non_matched" % field] = non_matched
+      else:
+        raise Exception("Unknow data type for field %s" % field)
+
+    return ret
+
   def compare_functions(self, src_id, bin_id):
     # XXX: FIXME: This function should be properly "handled"! It kind of works
     # but is extremely hard to explain why or how.

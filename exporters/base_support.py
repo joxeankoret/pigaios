@@ -8,10 +8,11 @@ import sqlite3
 import itertools
 import ConfigParser
 
+from threading import current_thread
 from terminalsize import get_terminal_size
 
 from threading import Lock
-from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import Pool
 from multiprocessing import cpu_count, Manager
 
 try:
@@ -145,30 +146,68 @@ def all_combinations(items):
       yield combo
 
 #-------------------------------------------------------------------------------
-class CBaseExporter:
+def _pickle_method(method):
+  func_name = method.im_func.__name__
+  obj = method.im_self
+  cls = method.im_class
+  return _unpickle_method, (func_name, obj, cls)
+
+def _unpickle_method(func_name, obj, cls):
+  for cls in cls.mro():
+    try:
+      func = cls.__dict__[func_name]
+    except KeyError:
+      pass
+    else:
+      break
+
+  return func.__get__(obj, cls)
+
+import copy_reg
+import types
+copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
+
+#-------------------------------------------------------------------------------
+class CBaseExporter(object):
   def __init__(self, cfg_file):
     self.cfg_file = cfg_file
     self.config = ConfigParser.ConfigParser()
     self.config.optionxform = str
     self.config.read(cfg_file)
-    self.db = None
-    self.create_schema(self.config.get('PROJECT', 'export-file'))
+    self.db = {}
+    self.create_schema(self.config.get('PROJECT', 'export-file'), remove = True)
     self.parallel = False
 
     self.warnings = 0
     self.errors = 0
     self.fatals = 0
 
-  def create_schema(self, filename):
-    if os.path.exists(filename):
+  def get_db(self):
+    pid = os.getpid()
+    tid = current_thread().ident
+    ident = "%d-%d" % (pid, tid)
+    if ident not in self.db:
+      self.create_schema(self.filename)
+
+    return self.db[ident]
+
+  def create_schema(self, filename, remove = False):
+    self.filename = filename
+    if remove and os.path.exists(filename):
       print "[i] Removing existing file %s" % filename
       os.remove(filename)
 
-    self.db = sqlite3.connect(filename, isolation_level=None, check_same_thread=False)
-    self.db.text_factory = str
-    self.db.row_factory = sqlite3.Row
+    tid = current_thread().ident
+    pid = os.getpid()
+    ident = "%d-%d" % (pid, tid)
+    self.db[ident] = sqlite3.connect(filename, isolation_level=None, check_same_thread=False)
+    self.db[ident].text_factory = str
+    self.db[ident].row_factory = sqlite3.Row
 
-    cur = self.db.cursor()
+    if not remove:
+      return
+
+    cur = self.db[ident].cursor()
     sql = """create table if not exists functions(
                           id integer not null primary key,
                           ea text,
@@ -214,7 +253,7 @@ class CBaseExporter:
     cur.execute(sql, (VERSION_VALUE,))
 
     cur.close()
-    return self.db
+    return self.get_db()
 
   def insert_row(self, sql, args, cur):
     if not self.parallel:
@@ -223,6 +262,7 @@ class CBaseExporter:
       self.to_insert_rows.append([sql, args])
 
   def do_export_one(self, args_list):
+    self.parallel = True
     filename, args, is_c = args_list
     if is_c:
       msg = "[+] CC %s %s" % (filename, " ".join(args))
@@ -238,7 +278,6 @@ class CBaseExporter:
       msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
       export_log(msg)
       self.fatals += 1
-      raise
 
   def export_parallel(self):
     c_args = ["-I%s" % self.config.get('GENERAL', 'includes')]
@@ -269,15 +308,15 @@ class CBaseExporter:
 
     total_cpus = cpu_count()
     export_log("Using a total of %d thread(s)" % total_cpus)
-    cur = self.db.cursor()
+    cur = self.get_db().cursor()
     cur.execute("PRAGMA synchronous = OFF")
     cur.execute("PRAGMA journal_mode = MEMORY")
     cur.execute("PRAGMA threads = %d" % total_cpus)
 
     with Manager() as manager:
       self.to_insert_rows = manager.list()
-      pool = ThreadPool(total_cpus)
-      pool.map(self.do_export_one, pool_args)
+      pool = Pool(total_cpus)
+      pool.map(self.do_export_one, pool_args, True)
 
       args = []
       sql = None
@@ -311,7 +350,7 @@ class CBaseExporter:
         cur.execute(sql, (callee,))
         row = cur.fetchone()
         if row is not None:
-          cur2 = self.db.cursor()
+          cur2 = self.get_db().cursor()
           sql = "insert into callgraph (caller, callee) values (?, ?)"
           try:
             cur2.execute(sql, (str(func_id), str(row[0])))
@@ -336,7 +375,7 @@ class CBaseExporter:
     close = False
     if cur is None:
       close = True
-      cur = self.db.cursor()
+      cur = self.get_db().cursor()
 
     sql = """select conditions, constants, constants_json, loops, switchs,
                     switchs_json, calls, externals, indirect, globals
@@ -422,7 +461,7 @@ class CBaseExporter:
 
     """
     export_log("[+] Creating inlined functions...")
-    cur = self.db.cursor()
+    cur = self.get_db().cursor()
 
     sql = """select cg.caller caller, cg.callee callee,
                     (select name
@@ -473,7 +512,7 @@ class CBaseExporter:
     cur.close()
 
   def final_steps(self):
-    cur = self.db.cursor()
+    cur = self.get_db().cursor()
     self.build_callgraphs(cur)
     try:
       if int(self.config.get('GENERAL', 'inlines')) == 1:
@@ -517,7 +556,6 @@ class CBaseExporter:
           msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
           export_log(msg)
           self.fatals += 1
-          raise
 
     self.final_steps()
 

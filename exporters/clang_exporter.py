@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
 import json
+from threading import current_thread
+
 import clang.cindex
 from clang.cindex import Diagnostic, CursorKind, TokenKind
 
@@ -343,7 +345,8 @@ class CClangExporter(CBaseExporter):
     self.errors += parser.errors
     self.fatals += parser.fatals
 
-    with self.db as cur:
+    db = self.get_db()
+    with db as cur:
       if not self.parallel:
         cur.execute("PRAGMA synchronous = OFF")
         cur.execute("BEGIN transaction")
