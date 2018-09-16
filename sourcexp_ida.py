@@ -205,6 +205,12 @@ class CBinaryToSourceExporter:
                           )"""
     cur.execute(sql)
 
+    sql = """create table if not exists constants(
+                          id integer not null primary key,
+                          func_id integer not null references functions(id) on delete cascade,
+                          constant text not null)"""
+    cur.execute(sql)
+
     sql = """ create unique index idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
 
@@ -407,17 +413,17 @@ class CBinaryToSourceExporter:
             json.dumps(list(switches)), len(calls), len(list(externals)),
             recursive, int(indirects), len(globals_uses),
             json.dumps(callees))
-    rowid = cur.execute(sql, args)
+    cur.execute(sql, args)
+    rowid = cur.lastrowid
 
     sql = "insert into callgraph (caller, callee) values (?, ?)"
     for callee in calls:
       cur.execute(sql, (str(f), str(callee)))
 
-    sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
-    cur.execute(sql)
-
-    sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
-    cur.execute(sql)
+    sql = "insert into constants (func_id, constant) values (?, ?)"
+    for constant in constants:
+      if type(constant) is str and len(constant) > 4:
+        cur.execute(sql, (rowid, constant))
 
     cur.close()
 
@@ -449,7 +455,13 @@ class CBinaryToSourceExporter:
         self.do_export(f)
     finally:
       hide_wait_box()
-    
+
+    sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
+    self.db.execute(sql)
+
+    sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
+    self.db.execute(sql)
+
     self.db.execute("COMMIT")
 
 #-------------------------------------------------------------------------------

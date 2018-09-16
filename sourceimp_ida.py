@@ -19,6 +19,10 @@ import sourceimp_core
 reload(sourceimp_core)
 
 from sourceimp_core import *
+
+import sourcexp_ida
+reload(sourcexp_ida)
+
 from sourcexp_ida import log, CBinaryToSourceExporter, VERSION_VALUE
 
 #-------------------------------------------------------------------------------

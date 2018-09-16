@@ -240,6 +240,12 @@ class CBaseExporter(object):
                           )"""
     cur.execute(sql)
 
+    sql = """create table if not exists constants(
+                          id integer not null primary key,
+                          func_id integer not null references functions(id) on delete cascade,
+                          constant text not null)"""
+    cur.execute(sql)
+
     sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
 
@@ -511,9 +517,27 @@ class CBaseExporter(object):
 
     cur.close()
 
+  def build_constants_list(self, cur):
+    export_log("[+] Building the constants table...")
+    cur.execute("BEGIN")
+
+    sql = "select id, constants_json from functions"
+    cur.execute(sql)
+    rows = cur.fetchall()
+    
+    insert_sql = "insert into constants (func_id, constant) values (?, ?)"
+    for row in rows:
+      constants = json.loads(row[1])
+      for constant in constants:
+        if len(constant) > 4:
+          cur.execute(insert_sql, (row[0], constant))
+
+    cur.execute("COMMIT")
+
   def final_steps(self):
     cur = self.get_db().cursor()
     self.build_callgraphs(cur)
+    self.build_constants_list(cur)
     try:
       if int(self.config.get('GENERAL', 'inlines')) == 1:
         self.build_inlines(cur)

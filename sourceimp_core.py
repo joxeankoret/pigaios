@@ -363,6 +363,27 @@ class CBinaryToSourceImporter:
     log("Minimum score for calculations: %f" % self.min_level)
     log("Minimum score to show results : %f" % self.min_display_level)
 
+
+    sql = """ select distinct bin_func.ea, src_func.name, src_func.id, bin_func.id
+                from functions bin_func,
+                     constants bin_const,
+                     src.functions src_func,
+                     src.constants src_const
+               where bin_const.constant = src_const.constant
+                 and bin_func.id = bin_const.func_id
+                 and src_func.id = src_const.func_id """
+    cur.execute(sql)
+    rows = cur.fetchall()
+    size += len(rows)
+    for row in rows:
+      func_ea = long(row[0])
+      match_name = row[1]
+      match_id = row[2]
+      bin_id = row[3]
+      score, reasons = self.compare_functions(match_id, bin_id)
+      self.add_match(match_id, func_ea, match_name, "Same rare constant",
+                     score, reasons)
+
     cur.close()
     return size != 0
 
