@@ -16,6 +16,17 @@ try:
 except ImportError:
   from_ida = False
 
+try:
+  import numpy as np
+
+  import pigaios_dt
+  reload(pigaios_dt)
+
+  from pigaios_dt import CPigaiosDecisionTree
+  has_dt = True
+except ImportError:
+  has_dt = False
+
 #-----------------------------------------------------------------------
 def sourceimp_log(msg):
   print "[%s] %s" % (time.asctime(), msg)
@@ -32,9 +43,12 @@ COMPARE_FIELDS = ["name", "conditions", "constants_json", "loops", "switchs",
                   "switchs_json", "calls", "externals", "recursive", "globals",
                   "callees_json"]
 
-COMPARE_WEIGHTS = {"name":4, "conditions":1.1, "constants_json":2, "loops":1.1,
-  "switchs":1.1, "switchs_json":2, "calls":1.1, "externals":1.1, "globals":1.1,
-  "recursive":1.1}
+ML_FIELDS_ORDER = ['callees_json_bin_total', 'callees_json_matched',
+                  'callees_json_non_matched', 'callees_json_src_total', 'calls',
+                  'conditions', 'constants_json_bin_total',
+                  'constants_json_matched', 'constants_json_non_matched',
+                  'constants_json_src_total', 'externals', 'globals', 
+                  'heuristic', 'loops', 'recursive', 'switchs', 'switchs_json']
 
 #-------------------------------------------------------------------------------
 def quick_ratio(buf1, buf2):
@@ -107,7 +121,6 @@ class CBinaryToSourceImporter:
 
     for field in COMPARE_FIELDS:
       if field == "name":
-        ret["accurate"] = src_row[field] == bin_row[field]
         continue
 
       if type(src_row[field]) in [int, long]:
@@ -115,10 +128,13 @@ class CBinaryToSourceImporter:
       elif field.endswith("_json"):
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
-        
+
         src_total = len(src_json)
         bin_total = len(bin_json)
-        
+
+        src_json = map(repr, src_json)
+        bin_json = map(repr, bin_json)
+
         s1 = set(src_json)
         s2 = set(bin_json)
         non_matched = s2.difference(s1).union(s1.difference(s2))
@@ -126,24 +142,38 @@ class CBinaryToSourceImporter:
 
         ret["%s_src_total" % field]   = src_total
         ret["%s_bin_total" % field]   = bin_total
-        ret["%s_matched" % field]     = matched
-        ret["%s_non_matched" % field] = non_matched
+        ret["%s_matched" % field]     = len(matched)
+        ret["%s_non_matched" % field] = len(non_matched)
       else:
         raise Exception("Unknow data type for field %s" % field)
 
-    return ret
+    tmp = []
+    for key in ML_FIELDS_ORDER:
+      if key not in ret:
+        tmp.append("0")
+      else:
+        tmp.append(ret[key])
+    return tmp
 
   def compare_functions(self, src_id, bin_id):
+    ml = 0.0
+    if has_dt:
+      line = self.get_compare_functions_data(src_id, bin_id, 0)
+      pdt = CPigaiosDecisionTree()
+      model = pdt.load_model()
+      ml = model.predict(np.array(line).reshape(1, -1))
+      ml = float(ml)
+
     # XXX: FIXME: This function should be properly "handled"! It kind of works
     # but is extremely hard to explain why or how.
     idx = "%s-%s" % (src_id, bin_id)
     if idx in self.compare_ratios:
-      score, reasons = self.compare_ratios[idx]
+      score, reasons, ml = self.compare_ratios[idx]
       if reasons is not None:
-        return score, reasons
+        return score, reasons, ml
 
     if src_id in self.being_compared:
-      return 0.0, None
+      return 0.0, None, ml
     self.being_compared.append(src_id)
 
     fields = COMPARE_FIELDS
@@ -258,9 +288,9 @@ class CBinaryToSourceImporter:
 
                   # Add a match for every single pair, we will remove the bad
                   # ones later on at choose_best_matches().
-                  sub_ratio, sub_reasons = self.compare_functions(sub_src_id, sub_bin_id)
-                  self.add_match(sub_src_id, sub_bin_ea, str(src_key), "Specific callee search", sub_ratio, sub_reasons)
-                  if sub_ratio == 1.0:
+                  sub_ratio, sub_reasons, sub_ml = self.compare_functions(sub_src_id, sub_bin_id)
+                  self.add_match(sub_src_id, sub_bin_ea, str(src_key), "Specific callee search", sub_ratio, sub_reasons, ml)
+                  if sub_ratio == 1.0 or sub_ml == 1.0:
                     # If we found a perfect match finding callees, chances are
                     # that this match is good.
                     reasons.append("Found a pefect callee match (%s)" % src_key)
@@ -282,7 +312,11 @@ class CBinaryToSourceImporter:
       score -= 0.2
 
     # ...and finally adjust the score.
-    ret = min(score, 1.0), reasons
+    score = min(score, 1.0)
+    if ml > score and score < self.min_display_level:
+      score = (score + ml) / 2
+
+    ret = score, reasons, ml
     self.compare_ratios[idx] = ret
     return ret
 
@@ -312,6 +346,9 @@ class CBinaryToSourceImporter:
     row = cur.fetchone()
     total = row[0]
 
+    if has_dt:
+      log("Decision tree based system available")
+
     log("Finding best matches...")
     for i in range(1, 6):
       # Constants must appear less than i% of the time in the sources
@@ -337,14 +374,14 @@ class CBinaryToSourceImporter:
         match_name = row[1]
         match_id = row[2]
         bin_id = row[3]
-        score, reasons = self.compare_functions(match_id, bin_id)
+        score, reasons, ml = self.compare_functions(match_id, bin_id)
         if score < min_score:
           min_score = score
         if score > max_score:
           max_score = score
 
         self.add_match(match_id, func_ea, match_name, "Attributes matching",
-                       score, reasons)
+                       score, reasons, ml)
 
       log("Minimum score %f, maximum score %f" % (min_score, max_score))
       # We have had too good matches or too few, use a more relaxed minimum score
@@ -380,23 +417,23 @@ class CBinaryToSourceImporter:
       match_name = row[1]
       match_id = row[2]
       bin_id = row[3]
-      score, reasons = self.compare_functions(match_id, bin_id)
+      score, reasons, ml = self.compare_functions(match_id, bin_id)
       self.add_match(match_id, func_ea, match_name, "Same rare constant",
-                     score, reasons)
+                     score, reasons, ml)
 
     cur.close()
     return size != 0
 
-  def add_match(self, match_id, func_ea, match_name, heur, score, reasons):
-    if score < self.min_level:
+  def add_match(self, match_id, func_ea, match_name, heur, score, reasons, ml):
+    if score < self.min_level and ml < self.min_level:
       return
 
     if match_id in self.best_matches:
-      old_ea, old_name, old_heur, old_score, old_reasons = self.best_matches[match_id]
+      old_ea, old_name, old_heur, old_score, old_reasons, old_ml = self.best_matches[match_id]
       if old_score >= score:
         return
 
-    self.best_matches[match_id] = (func_ea, match_name, heur, score, reasons)
+    self.best_matches[match_id] = (func_ea, match_name, heur, score, reasons, ml)
 
   def get_binary_id_ea(self, field, value):
     cur = self.db.cursor()
@@ -545,17 +582,17 @@ class CBinaryToSourceImporter:
                 if not curr_bin_id:
                   continue
 
-                score, reasons = self.compare_functions(src_row[call_type], curr_bin_id)
+                score, reasons, ml = self.compare_functions(src_row[call_type], curr_bin_id)
                 if score >= min_level:
                   func_name = self.get_source_func_name(src_row[call_type])
                   self.add_match(long(src_row[call_type]), bin_row[call_type],
                                  func_name, "Callgraph match (%s, iteration %d)" % (call_type, iteration),
-                                 score, reasons)
+                                 score, reasons, ml)
 
     cur.close()
 
   def find_nearby_functions(self, match_id, ea, min_level, iteration):
-    ea, func, heur, score, reasons = self.best_matches[match_id]
+    ea, func, heur, score, reasons, ml = self.best_matches[match_id]
     if score >= min_level:
       cur = self.db.cursor()
       sql = "select id from functions where ea = ?"
@@ -581,7 +618,7 @@ class CBinaryToSourceImporter:
             if not bin_row:
               break
 
-            score, reasons = self.compare_functions(src_id + i, bin_id + i)
+            score, reasons, ml = self.compare_functions(src_id + i, bin_id + i)
             if score < min_level:
               break
 
@@ -590,7 +627,7 @@ class CBinaryToSourceImporter:
             new_func_name = src_row[2]
             heur = "Nearby Function (Iteration %d)" % iteration
             assert(new_func_ea is not None)
-            self.add_match(new_match_id, new_func_ea, new_func_name, heur, score, reasons)
+            self.add_match(new_match_id, new_func_ea, new_func_name, heur, score, reasons, ml)
 
             if i < 0:
               i -= 1
@@ -620,7 +657,7 @@ class CBinaryToSourceImporter:
         dones.add(match_id)
 
         if match_id in self.best_matches:
-          ea, bin_caller, heur, score, reasons = self.best_matches[match_id]
+          ea, bin_caller, heur, score, reasons, ml = self.best_matches[match_id]
           if ea in ea_dones:
             continue
           ea_dones.add(ea)
@@ -643,7 +680,7 @@ class CBinaryToSourceImporter:
   def choose_best_matches(self, is_final = False):
     bin_d = {}
     src_d = {}
-    
+
     if is_final:
       level = self.min_display_level
     else:
@@ -653,9 +690,9 @@ class CBinaryToSourceImporter:
       if src_id not in self.best_matches:
         continue
 
-      ea, func, heur, score, reasons = self.best_matches[src_id]
+      ea, func, heur, score, reasons, ml = self.best_matches[src_id]
       bin_func_name = self.get_function_name(long(ea))
-      if score <= level or seems_false_positive(func, bin_func_name):
+      if (score <= level and ml <= level) or seems_false_positive(func, bin_func_name):
         if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
         continue
@@ -683,7 +720,7 @@ class CBinaryToSourceImporter:
           del self.best_matches[src_id]
 
     for src_id in list(self.best_matches):
-      ea, func, heur, score, reasons = self.best_matches[src_id]
+      ea, func, heur, score, reasons, ml = self.best_matches[src_id]
       ea = str(ea)
       tmp_id, score = bin_d[ea]
       if tmp_id != src_id:

@@ -13,7 +13,7 @@ from idautils import *
 from others.tarjan_sort import strongly_connected_components
 
 #-------------------------------------------------------------------------------
-VERSION_VALUE = "Pigaios IDA Exporter 1.1"
+VERSION_VALUE = "Pigaios IDA Exporter 1.2"
 
 #-------------------------------------------------------------------------------
 BANNED_FUNCTIONS = ['__asprintf_chk',

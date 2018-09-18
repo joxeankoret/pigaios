@@ -7,6 +7,7 @@ import time
 import shlex
 import difflib
 import sqlite3
+import operator
 
 from subprocess import Popen, PIPE, STDOUT
 
@@ -224,7 +225,7 @@ class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches, importer_obj):
     self.importer = importer_obj
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["Heuristic", 25], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["ML", 4], ["Heuristic", 25], ]
     if _DEBUG:
       self.columns.append(["FP?", 6])
       self.columns.append(["Reasons", 40])
@@ -238,16 +239,16 @@ class CDiffChooser(Choose2):
     self.selected_items = []
 
     for i, match in enumerate(matches):
-      ea, name, heuristic, score, reason = matches[match]
+      ea, name, heuristic, score, reason, ml = matches[match]
       bin_func_name = GetFunctionName(long(ea))
-      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), heuristic, reason]
+      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), str(ml), heuristic, reason]
       if _DEBUG:
         maybe_false_positive = int(seems_false_positive(name, bin_func_name))
         line.append(str(maybe_false_positive))
         line.append(reason)
       self.items.append(line)
 
-    self.items = sorted(self.items, key=lambda x: x[5], reverse=True)
+    self.items = sorted(self.items, key=operator.itemgetter(5, 6), reverse=True)
 
   def show(self):
     ret = self.Show(False)
@@ -274,9 +275,9 @@ class CDiffChooser(Choose2):
         return [0x0000FF, 0]
 
     ratio = float(line[5])
-    red = int(164 * (1 - ratio))
-    green = int(128 * ratio)
-    blue = int(255 * (1 - ratio))
+    red = abs(int(164 * (1 - ratio)))
+    green = abs(int(128 * ratio))
+    blue = abs(int(255 * (1 - ratio)))
     color = int("0x%02x%02x%02x" % (blue, green, red), 16)
     return [color, 0]
 
