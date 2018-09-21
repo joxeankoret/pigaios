@@ -19,13 +19,14 @@ except ImportError:
 try:
   import numpy as np
 
-  import pigaios_dt
-  reload(pigaios_dt)
+  from ml import pigaios_ml
+  reload(pigaios_ml)
 
-  from pigaios_dt import CPigaiosDecisionTree
-  has_dt = True
+  from ml.pigaios_ml import *
+  has_ml = True
 except ImportError:
-  has_dt = False
+  has_ml = False
+  raise
 
 #-----------------------------------------------------------------------
 def sourceimp_log(msg):
@@ -96,6 +97,9 @@ class CBinaryToSourceImporter:
 
     self.being_compared = []
 
+    self.ml_classifier = None
+    self.ml_model = None
+
   def get_compare_functions_data(self, src_id, bin_id, heur):
     """
     Generate a dictionary with data about the functions being compared that we
@@ -157,11 +161,14 @@ class CBinaryToSourceImporter:
 
   def compare_functions(self, src_id, bin_id):
     ml = 0.0
-    if has_dt:
+    if has_ml:
       line = self.get_compare_functions_data(src_id, bin_id, 0)
-      pdt = CPigaiosDecisionTree()
-      model = pdt.load_model()
-      ml = model.predict(np.array(line).reshape(1, -1))
+      if self.ml_model is None:
+        self.ml_classifier = CPigaiosClassifier()
+        self.ml_model = self.ml_classifier.load_model()
+
+      line = map(float, line)
+      ml = self.ml_model.predict(np.array(line).reshape(1, -1))
       ml = float(ml)
 
     # XXX: FIXME: This function should be properly "handled"! It kind of works
@@ -194,7 +201,7 @@ class CBinaryToSourceImporter:
     non_zero_num_matches = 0
     for field in COMPARE_FIELDS:
       if src_row[field] == bin_row[field] and field == "name":
-        score += 1. * len(fields)
+        score += 3 * len(fields)
         reasons.append("Same function name")
       elif type(src_row[field]) in [int, long]:
         if src_row[field] == bin_row[field]:
@@ -207,8 +214,11 @@ class CBinaryToSourceImporter:
           min_val = min(src_row[field], bin_row[field])
           if max_val > 0 and min_val > 0:
             tmp = (min_val * 1.0) / (max_val * 2.0)
-            score += tmp
-            reasons.append("Similar number of %s (%d, %d)" % (field, src_row[field], bin_row[field]))
+            if tmp >= 0.25:
+              score += tmp
+              reasons.append("Similar number of %s (%d, %d) -> %f" % (field, src_row[field], bin_row[field], tmp))
+            else:
+              score -= tmp
       elif src_row[field] == bin_row[field] and field.find("_json") == -1:
         score += 1.5
         reasons.append("Same field %s (%s)" % (field, src_row[field]))
@@ -314,7 +324,7 @@ class CBinaryToSourceImporter:
     # ...and finally adjust the score.
     score = min(score, 1.0)
     if ml > score and score < self.min_display_level:
-      score = (score + ml) / 2
+      score += ml / 4.
 
     ret = score, reasons, ml
     self.compare_ratios[idx] = ret
@@ -346,7 +356,7 @@ class CBinaryToSourceImporter:
     row = cur.fetchone()
     total = row[0]
 
-    if has_dt:
+    if has_ml:
       log("Decision tree based system available")
 
     log("Finding best matches...")
@@ -662,11 +672,10 @@ class CBinaryToSourceImporter:
             continue
           ea_dones.add(ea)
 
-          if i == 1 or score > 0.3 + (i * 0.1):
+          if i == 1 or score > 0.5 + (i * 0.1) or ml == 1.0:
             self.find_nearby_functions(match_id, ea, 0.3 + (i * 0.1), i)
-
-          self.find_one_callgraph_match(match_id, ea, self.min_level, "callee", i)
-          self.find_one_callgraph_match(match_id, ea, self.min_level, "caller", i)
+            self.find_one_callgraph_match(match_id, ea, self.min_level, "callee", i)
+            self.find_one_callgraph_match(match_id, ea, self.min_level, "caller", i)
 
           # More than 5 minutes for a single iteration is too long...
           if time.time() - t >= 60 * 5:
@@ -692,7 +701,7 @@ class CBinaryToSourceImporter:
 
       ea, func, heur, score, reasons, ml = self.best_matches[src_id]
       bin_func_name = self.get_function_name(long(ea))
-      if (score <= level and ml <= level) or seems_false_positive(func, bin_func_name):
+      if score <= level or seems_false_positive(func, bin_func_name):
         if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
         continue

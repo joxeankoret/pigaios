@@ -221,11 +221,18 @@ class CHtmlDiff:
     return res
 
 #-------------------------------------------------------------------------------
+def str_float(x):
+  try:
+    return float(x)
+  except:
+    return 0
+
+#-------------------------------------------------------------------------------
 class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches, importer_obj):
     self.importer = importer_obj
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 6], ["ML", 4], ["Heuristic", 25], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 4], ["ML", 4], ["AVG", 4], ["Heuristic", 25], ]
     if _DEBUG:
       self.columns.append(["FP?", 6])
       self.columns.append(["Reasons", 40])
@@ -241,7 +248,7 @@ class CDiffChooser(Choose2):
     for i, match in enumerate(matches):
       ea, name, heuristic, score, reason, ml = matches[match]
       bin_func_name = GetFunctionName(long(ea))
-      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), str(ml), heuristic, reason]
+      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), str(ml), str((score + str_float(ml))/2), heuristic, reason]
       if _DEBUG:
         maybe_false_positive = int(seems_false_positive(name, bin_func_name))
         line.append(str(maybe_false_positive))
