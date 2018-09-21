@@ -9,6 +9,7 @@ Copyright (c) 2018, Joxean Koret
 
 import os
 import sys
+import csv
 import time
 import sklearn
 import numpy as np
@@ -44,15 +45,13 @@ class CPigaiosDecisionTree:
     lines = open(dataset, "rb").readlines()
     x_values = []
     y_values = []
-    for i, line in enumerate(lines):
-      if i == 0:
-        continue
-
-      line = line.strip("\n").strip("\r")
-      fields = line.split(",")
-      is_match = fields[2]
-      x_values.append( map(float, fields[3:]) )
-      y_values.append( [float(is_match)] )
+    with open(dataset, "r") as f:
+      reader = csv.reader(f)
+      next(reader, None)
+      for row in reader:
+        is_match = row[2]
+        x_values.append( map(float, row[3:]) )
+        y_values.append( [float(is_match)] )
 
     return np.array(x_values), np.array(y_values)
 
