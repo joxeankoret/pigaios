@@ -8,16 +8,17 @@ Basically, the tool does the following:
  * Export the same data extracted from C source codes from IDA databases.
  * Find matches between the artifacts found in C source codes and IDA databases.
  * After an initial set of matches with no false positive is found, find more matches from the callgraph.
+ * Rate the matches using both an "expert system" and a "machine learning" based system.
  * Also, import into the IDA database all the required structures and enumerations of a given code base (something not trivial in IDA).
  
  The tool will be released at some point in October.
 
 ## Requirements
 
-This project requires the installation of the CLang's Python bindings and Colorama is required for displaying colours. You can install in Debian based Linux distros the dependencies with the following command:
+This project requires the installation of the CLang's Python bindings, Colorama is required for displaying colours (but is optional) and SciKit Learn is required for the Machine Learning part (which is also optional). You can install in Debian based Linux distros the dependencies with the following command:
  
 ```
-$ sudo apt-get install clang python-clang-5.0 libclang-5.0-dev python-colorama
+$ sudo apt-get install clang python-clang-5.0 libclang-5.0-dev python-colorama python-sklearn
 ```
 
 In other operating systems, like in Windows, you can install them by issuing the following commands:
@@ -25,7 +26,9 @@ In other operating systems, like in Windows, you can install them by issuing the
 ```
 $ pip install clang-5
 $ pip install colorama
+$ pip install scikit-learn
 ```
+
 In Windows, it's also required to install LLVM. You can use the pre-built binaries: http://releases.llvm.org/download.html
 
 NOTE: There is no strong requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9. However, most of the testing have been done with version 5.0.
