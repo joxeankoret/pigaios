@@ -1,0 +1,8 @@
+.headers on
+.mode csv
+.output dataset.csv
+select * from matches where accurate = 1;
+.headers off
+select * from matches where accurate = 0 order by random() limit 1000000;
+.quit
+
