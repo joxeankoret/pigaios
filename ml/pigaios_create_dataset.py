@@ -134,7 +134,9 @@ class CPigaiosTrainer:
       if field == "switchs_json":
         ret[field] = int(row["src_%s" % field] == row["bin_%s" % field])
       elif type(row["src_%s" % field]) in [int, long]:
-        ret[field] = abs(row["src_%s" % field] - row["bin_%s" % field])
+        ret["src_%s" % field] = int(row["src_%s" % field])
+        ret["bin_%s" % field] = int(row["bin_%s" % field])
+        ret["%s_diff" % field] = abs(row["src_%s" % field] - row["bin_%s" % field])
       elif field.endswith("_json"):
         src_json = json.loads(row["src_%s" % field])
         bin_json = json.loads(row["bin_%s" % field])

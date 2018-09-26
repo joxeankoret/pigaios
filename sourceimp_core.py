@@ -4,7 +4,6 @@ import os
 import sys
 import json
 import time
-import shlex
 import difflib
 import sqlite3
 
@@ -26,7 +25,6 @@ try:
   has_ml = True
 except ImportError:
   has_ml = False
-  raise
 
 #-----------------------------------------------------------------------
 def sourceimp_log(msg):
@@ -44,12 +42,15 @@ COMPARE_FIELDS = ["name", "conditions", "constants_json", "loops", "switchs",
                   "switchs_json", "calls", "externals", "recursive", "globals",
                   "callees_json"]
 
-ML_FIELDS_ORDER = ['callees_json_bin_total', 'callees_json_matched',
-                  'callees_json_non_matched', 'callees_json_src_total', 'calls',
-                  'conditions', 'constants_json_bin_total',
-                  'constants_json_matched', 'constants_json_non_matched',
-                  'constants_json_src_total', 'externals', 'globals', 
-                  'heuristic', 'loops', 'recursive', 'switchs', 'switchs_json']
+ML_FIELDS_ORDER = ['bin_calls', 'bin_conditions', 'bin_externals',
+  'bin_globals', 'bin_loops', 'bin_recursive', 'bin_switchs',
+  'callees_json_bin_total', 'callees_json_matched', 'callees_json_non_matched',
+  'callees_json_src_total', 'calls_diff', 'conditions_diff',
+  'constants_json_bin_total', 'constants_json_matched',
+  'constants_json_non_matched', 'constants_json_src_total', 'externals_diff',
+  'globals_diff', 'heuristic', 'loops_diff', 'recursive_diff', 'src_calls',
+  'src_conditions', 'src_externals', 'src_globals', 'src_loops',
+  'src_recursive', 'src_switchs', 'switchs_diff', 'switchs_json']
 
 #-------------------------------------------------------------------------------
 def quick_ratio(buf1, buf2):
@@ -128,7 +129,9 @@ class CBinaryToSourceImporter:
         continue
 
       if type(src_row[field]) in [int, long]:
-        ret[field] = int(src_row[field] == bin_row[field])
+        ret["src_%s" % field] = int(src_row[field])
+        ret["bin_%s" % field] = int(bin_row[field])
+        ret["%s_diff" % field] = abs(src_row[field] - bin_row[field])
       elif field.endswith("_json"):
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
@@ -152,6 +155,9 @@ class CBinaryToSourceImporter:
         raise Exception("Unknow data type for field %s" % field)
 
     tmp = []
+    header = ret.keys()
+    header.sort()
+
     for key in ML_FIELDS_ORDER:
       if key not in ret:
         tmp.append("0")
@@ -160,6 +166,18 @@ class CBinaryToSourceImporter:
     return tmp
 
   def compare_functions(self, src_id, bin_id):
+    # XXX: FIXME: This function should be properly "handled"! It kind of works
+    # but is extremely hard to explain why or how.
+    idx = "%s-%s" % (src_id, bin_id)
+    if idx in self.compare_ratios:
+      score, reasons, ml = self.compare_ratios[idx]
+      if reasons is not None:
+        return score, reasons, ml
+
+    if src_id in self.being_compared:
+      return 0.0, None, 0.0
+    self.being_compared.append(src_id)
+
     ml = 0.0
     if has_ml:
       line = self.get_compare_functions_data(src_id, bin_id, 0)
@@ -170,18 +188,8 @@ class CBinaryToSourceImporter:
       line = map(float, line)
       ml = self.ml_model.predict(np.array(line).reshape(1, -1))
       ml = float(ml)
-
-    # XXX: FIXME: This function should be properly "handled"! It kind of works
-    # but is extremely hard to explain why or how.
-    idx = "%s-%s" % (src_id, bin_id)
-    if idx in self.compare_ratios:
-      score, reasons, ml = self.compare_ratios[idx]
-      if reasons is not None:
-        return score, reasons, ml
-
-    if src_id in self.being_compared:
-      return 0.0, None, ml
-    self.being_compared.append(src_id)
+      if round(ml) == 0.0:
+        ml = 0
 
     fields = COMPARE_FIELDS
     cur = self.db.cursor()
@@ -364,8 +372,10 @@ class CBinaryToSourceImporter:
       # Constants must appear less than i% of the time in the sources
       val = (total * i / 100)
       cur.execute(sql % val)
-      rows = cur.fetchall()
-      if len(rows) > 0:
+      row = cur.fetchone()
+      if row:
+        rows = cur.fetchall()
+        rows.insert(0, row)
         break
 
     size = len(rows)
@@ -420,9 +430,12 @@ class CBinaryToSourceImporter:
                  and bin_func.id = bin_const.func_id
                  and src_func.id = src_const.func_id """
     cur.execute(sql)
-    rows = cur.fetchall()
-    size += len(rows)
-    for row in rows:
+    while 1:
+      row = cur.fetchone()
+      if not row:
+        break
+
+      size += 1
       func_ea = long(row[0])
       match_name = row[1]
       match_id = row[2]

@@ -221,13 +221,6 @@ class CHtmlDiff:
     return res
 
 #-------------------------------------------------------------------------------
-def str_float(x):
-  try:
-    return float(x)
-  except:
-    return 0
-
-#-------------------------------------------------------------------------------
 class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches, importer_obj):
     self.importer = importer_obj
@@ -248,7 +241,7 @@ class CDiffChooser(Choose2):
     for i, match in enumerate(matches):
       ea, name, heuristic, score, reason, ml = matches[match]
       bin_func_name = GetFunctionName(long(ea))
-      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), str(ml), str((score + str_float(ml))/2), heuristic, reason]
+      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), str(ml), str((score + ml)/2), heuristic, reason]
       if _DEBUG:
         maybe_false_positive = int(seems_false_positive(name, bin_func_name))
         line.append(str(maybe_false_positive))
@@ -356,7 +349,6 @@ class CDiffChooser(Choose2):
         Warning("Cannot decompile function 0x%08x" % ea)
         return False
 
-      #print "Diffing", row[0], type(row[0]), ea, type(ea)
       buf1 = indent_source(row[0])
       buf2 = proto
       buf2 += "\n".join(self.differ.pseudo[ea])
@@ -371,7 +363,7 @@ class CDiffChooser(Choose2):
 class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
   def __init__(self):
     CBinaryToSourceImporter.__init__(self, GetIdbPath())
-    show_wait_box("Diffing...")
+    show_wait_box("Finding matches...")
 
   def different_versions(self):
     ret = False
@@ -487,7 +479,7 @@ def main():
   if not x.Execute():
     return
 
-  show_wait_box("Diffing...")
+  show_wait_box("Finding matches...")
   try:
     database = x.iFileOpen.value
     min_level = float(x.iMinLevel.value)
