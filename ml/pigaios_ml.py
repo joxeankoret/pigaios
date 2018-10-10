@@ -24,6 +24,7 @@ import sys
 import csv
 import time
 import math
+import random
 import sklearn
 import threading
 import numpy as np
@@ -55,9 +56,10 @@ SK_MINOR = int(sklearn.__version__.split(".")[1])
 # very interesting, but I'll leave it here.
 #
 ML_CLASSIFIERS = [
-  (tree.DecisionTreeRegressor, "Decision Tree Regressor", "mse"),
+  (tree.DecisionTreeClassifier, "Decision Tree Classifier", "gini"),
   (naive_bayes.BernoulliNB, "Bernoulli Naive Bayes", 1.0),
-  (ensemble.GradientBoostingRegressor, "Gradient Boosting Regressor", "ls"),
+  (ensemble.GradientBoostingClassifier, "Gradient Boosting Classifier", "deviance"),
+  (ensemble.RandomForestClassifier, "Random Forest Classifier", 10),
   ]
 
 #-------------------------------------------------------------------------------
@@ -100,10 +102,14 @@ class CPigaiosVotingClassifier(ensemble.VotingClassifier):
 
 #-------------------------------------------------------------------------------
 class CPigaiosMultiClassifier(object):
-  def __init__(self):
+  def __init__(self, random_state = None):
     self.clfs = {}
     for classifier, name, arg in ML_CLASSIFIERS:
-      self.clfs[name] = classifier(arg)
+      has_seed = 'random_state' in dir(classifier.__init__.im_class())
+      if has_seed:
+        self.clfs[name] = classifier(arg, random_state = random_state)
+      else:
+        self.clfs[name] = classifier(arg)
 
   def fit(self, X, y):
     threads = []
@@ -126,7 +132,8 @@ class CPigaiosMultiClassifier(object):
     min_val = 0.0
     max_val = max(ret)
     if round(max_val) == 1.0:
-      min_val = max_val
+      if sum(ret) >= 2.0:
+        min_val = max_val
 
     val = sum(ret) / len(ret)
     if val < min_val:
@@ -189,8 +196,8 @@ class CPigaiosClassifier:
       else:
         ones_bad += 1
 
-    line = "Correctly predicted %d out of %d (true positives %d -> %f%%, false positives %d -> %f%%)"
-    log(line % (ones, ones + ones_bad, ones_bad, (ones * 100. / (ones + ones_bad)), zeros_bad, ((zeros_bad * 100. / (zeros + zeros_bad)))))
+    line = "Correctly predicted %d out of %d (false negatives %d -> %f%%, false positives %d -> %f%%)"
+    log(line % (ones, ones + ones_bad, ones_bad, (ones_bad * 100. / (ones + ones_bad)), zeros_bad, ((zeros_bad * 100. / (zeros + zeros_bad)))))
     log("Total right matches %d -> %f%%" % (total_matches, (total_matches * 100. / len(X))))
 
   def load_model(self):
@@ -268,6 +275,7 @@ def usage():
   print "--sgd-classifier         Use a linear classifier with SGD training."
   print "--gaussian-naive-bayes   Use a Gaussian Naive Bayes classifier."
   print "--multinomial-bayes      Use a Gaussian Multinomial Naive Bayes classifier."
+  print "--random-forest          Use a Random Forest classifier."
   print "--graphviz               Show the generated decision tree."
   print "--criterion-mse          Set the regressor criterion to MSE."
   print "--criterion-fmse         Set the regressor criterion to Friedman's MSE."
@@ -279,6 +287,7 @@ def usage():
 
 #-------------------------------------------------------------------------------
 def main(args):
+  random.seed(1)
   pdt = CPigaiosClassifier()
   for arg in args:
     if arg in ["-t", "--train"]:
@@ -336,6 +345,10 @@ def main(args):
       log("Using the MLPClassifier")
       pdt.dt_type = neural_network.MLPClassifier
       pdt.criterion = 15
+    elif arg in ["-rf", "--random-forest"]:
+      log("Using the RandomForestClassifier")
+      pdt.dt_type = ensemble.RandomForestClassifier
+      pdt.criterion = 10
     elif arg in ["-g", "--graphviz"]:
       pdt.graphviz()
     elif arg in ["-mse", "--criterion-mse"]:

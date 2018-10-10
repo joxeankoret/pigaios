@@ -53,6 +53,30 @@ ML_FIELDS_ORDER = ['bin_calls', 'bin_conditions', 'bin_externals',
   'src_recursive', 'src_switchs', 'switchs_diff', 'switchs_json']
 
 #-------------------------------------------------------------------------------
+ATTRIBUTES_MATCHING = 0
+SAME_RARE_CONSTANT = 1
+NEARBY_FUNCTION = 2
+CALLGRAPH_MATCH = 3
+SPECIFIC_CALLEE_SEARCH = 4
+
+# All heuristics are equal, but some are more equal than others.
+HEURISTICS = {
+  ATTRIBUTES_MATCHING     : 1.0,
+  SAME_RARE_CONSTANT      : 1.0,
+  NEARBY_FUNCTION         : 0.8,
+  CALLGRAPH_MATCH         : 0.7,
+  SPECIFIC_CALLEE_SEARCH  : 0.7,
+}
+
+ML_HEURISTICS = {
+  ATTRIBUTES_MATCHING     :1.,
+  SAME_RARE_CONSTANT      :2.,
+  NEARBY_FUNCTION         :4.,
+  CALLGRAPH_MATCH         :9,
+  SPECIFIC_CALLEE_SEARCH  :5.
+}
+
+#-------------------------------------------------------------------------------
 def quick_ratio(buf1, buf2):
   try:
     if buf1 is None or buf2 is None:
@@ -124,14 +148,19 @@ class CBinaryToSourceImporter:
     src_row = cur.fetchone()
     cur.close()
 
+    if bin_row is None or src_row is None:
+      return
+
     for field in COMPARE_FIELDS:
       if field == "name":
         continue
 
-      if type(src_row[field]) in [int, long]:
+      if field == "switchs_json":
+        ret[field] = int(src_row[field] == bin_row[field])
+      elif type(src_row[field]) in [int, long]:
         ret["src_%s" % field] = int(src_row[field])
         ret["bin_%s" % field] = int(bin_row[field])
-        ret["%s_diff" % field] = abs(src_row[field] - bin_row[field])
+        ret[field] = abs(src_row[field] - bin_row[field])
       elif field.endswith("_json"):
         src_json = json.loads(src_row[field])
         bin_json = json.loads(bin_row[field])
@@ -165,7 +194,7 @@ class CBinaryToSourceImporter:
         tmp.append(ret[key])
     return tmp
 
-  def compare_functions(self, src_id, bin_id):
+  def compare_functions(self, src_id, bin_id, heuristic):
     # XXX: FIXME: This function should be properly "handled"! It kind of works
     # but is extremely hard to explain why or how.
     idx = "%s-%s" % (src_id, bin_id)
@@ -181,15 +210,16 @@ class CBinaryToSourceImporter:
     ml = 0.0
     if has_ml:
       line = self.get_compare_functions_data(src_id, bin_id, 0)
-      if self.ml_model is None:
-        self.ml_classifier = CPigaiosClassifier()
-        self.ml_model = self.ml_classifier.load_model()
+      if line is not None:
+        if self.ml_model is None:
+          self.ml_classifier = CPigaiosClassifier()
+          self.ml_model = self.ml_classifier.load_model()
 
-      line = map(float, line)
-      ml = self.ml_model.predict(np.array(line).reshape(1, -1))
-      ml = float(ml)
-      if round(ml) == 0.0:
-        ml = 0
+        line = map(float, line)
+        ml = self.ml_model.predict(np.array(line).reshape(1, -1))
+        ml = float(ml)
+        if round(ml) == 0.0:
+          ml = 0
 
     fields = COMPARE_FIELDS
     cur = self.db.cursor()
@@ -201,6 +231,9 @@ class CBinaryToSourceImporter:
     cur.execute(sql, (src_id,))
     src_row = cur.fetchone()
     cur.close()
+
+    if bin_row is None or src_row is None:
+      return 0, None, 0.0
 
     vals = set()
     reasons = []
@@ -306,13 +339,13 @@ class CBinaryToSourceImporter:
 
                   # Add a match for every single pair, we will remove the bad
                   # ones later on at choose_best_matches().
-                  sub_ratio, sub_reasons, sub_ml = self.compare_functions(sub_src_id, sub_bin_id)
+                  sub_ratio, sub_reasons, sub_ml = self.compare_functions(sub_src_id, sub_bin_id, SPECIFIC_CALLEE_SEARCH)
                   self.add_match(sub_src_id, sub_bin_ea, str(src_key), "Specific callee search", sub_ratio, sub_reasons, ml)
                   if sub_ratio == 1.0 or sub_ml == 1.0:
                     # If we found a perfect match finding callees, chances are
                     # that this match is good.
                     reasons.append("Found a pefect callee match (%s)" % src_key)
-                    score += 3.
+                    score += 1.
                     sub_dones.add(src_key)
                     break
 
@@ -329,10 +362,13 @@ class CBinaryToSourceImporter:
     if non_zero_num_matches < 4:
       score -= 0.2
 
+    # Calculate the proper score according to the heuristic being calculated.
+    score *= HEURISTICS[heuristic]
+
     # ...and finally adjust the score.
     score = min(score, 1.0)
     if ml > score and score < self.min_display_level:
-      score += ml / 4.
+      score += ml / ML_HEURISTICS[heuristic]
 
     ret = score, reasons, ml
     self.compare_ratios[idx] = ret
@@ -368,6 +404,7 @@ class CBinaryToSourceImporter:
       log("Decision tree based system available")
 
     log("Finding best matches...")
+    rows = []
     for i in range(1, 6):
       # Constants must appear less than i% of the time in the sources
       val = (total * i / 100)
@@ -394,7 +431,7 @@ class CBinaryToSourceImporter:
         match_name = row[1]
         match_id = row[2]
         bin_id = row[3]
-        score, reasons, ml = self.compare_functions(match_id, bin_id)
+        score, reasons, ml = self.compare_functions(match_id, bin_id, ATTRIBUTES_MATCHING)
         if score < min_score:
           min_score = score
         if score > max_score:
@@ -420,7 +457,6 @@ class CBinaryToSourceImporter:
     log("Minimum score for calculations: %f" % self.min_level)
     log("Minimum score to show results : %f" % self.min_display_level)
 
-
     sql = """ select distinct bin_func.ea, src_func.name, src_func.id, bin_func.id
                 from functions bin_func,
                      constants bin_const,
@@ -428,7 +464,11 @@ class CBinaryToSourceImporter:
                      src.constants src_const
                where bin_const.constant = src_const.constant
                  and bin_func.id = bin_const.func_id
-                 and src_func.id = src_const.func_id """
+                 and src_func.id = src_const.func_id
+                 and (select count(*)
+                        from src.constants sc
+                       where sc.constant = src_const.constant
+                      ) <= 3"""
     cur.execute(sql)
     while 1:
       row = cur.fetchone()
@@ -440,7 +480,7 @@ class CBinaryToSourceImporter:
       match_name = row[1]
       match_id = row[2]
       bin_id = row[3]
-      score, reasons, ml = self.compare_functions(match_id, bin_id)
+      score, reasons, ml = self.compare_functions(match_id, bin_id, SAME_RARE_CONSTANT)
       self.add_match(match_id, func_ea, match_name, "Same rare constant",
                      score, reasons, ml)
 
@@ -605,7 +645,7 @@ class CBinaryToSourceImporter:
                 if not curr_bin_id:
                   continue
 
-                score, reasons, ml = self.compare_functions(src_row[call_type], curr_bin_id)
+                score, reasons, ml = self.compare_functions(src_row[call_type], curr_bin_id, CALLGRAPH_MATCH)
                 if score >= min_level:
                   func_name = self.get_source_func_name(src_row[call_type])
                   self.add_match(long(src_row[call_type]), bin_row[call_type],
@@ -641,8 +681,8 @@ class CBinaryToSourceImporter:
             if not bin_row:
               break
 
-            score, reasons, ml = self.compare_functions(src_id + i, bin_id + i)
-            if score < min_level:
+            score, reasons, ml = self.compare_functions(src_id + i, bin_id + i, NEARBY_FUNCTION)
+            if score < min_level and ml < min_level:
               break
 
             new_match_id = src_row[0]
@@ -685,7 +725,7 @@ class CBinaryToSourceImporter:
             continue
           ea_dones.add(ea)
 
-          if i == 1 or score > 0.5 + (i * 0.1) or ml == 1.0:
+          if i == 1 or score >= self.min_level or ml == 1.0:
             self.find_nearby_functions(match_id, ea, 0.3 + (i * 0.1), i)
             self.find_one_callgraph_match(match_id, ea, self.min_level, "callee", i)
             self.find_one_callgraph_match(match_id, ea, self.min_level, "caller", i)
