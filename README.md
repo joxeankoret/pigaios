@@ -1,6 +1,6 @@
 # Pigaios
 
-Pigaios ('πηγαίος', Greek for 'source' as in 'source code') is a tool for diffing/matching source codes directly against binaries published under the GPL v3 license (althought commercial licenses for proprietary developments might be available; contact admin AT joxeankoret DOT com for more details). The idea is to point a tool to a code base, regardless of it being compilable or not (for example, partial source code or source code for platforms not at your hand), extract information from that code base and, then, import in an IDA database function names (symbols), structures and enumerations. It uses the Python CLang bindings (which are very limited, but still better than using pycparser).
+Pigaios ('πηγαίος', Greek for 'source' as in 'source code') is a tool for diffing/matching source codes directly against binaries. The idea is to point a tool to a code base, regardless of it being compilable or not (for example, partial source code or source code for platforms not at your hand), extract information from that code base and, then, import in an IDA database function names (symbols), structures and enumerations. It uses the Python CLang bindings (which are very limited, but still better than using pycparser).
 
 Basically, the tool does the following:
 
@@ -163,3 +163,7 @@ BeginCountPerfCounter
 Once we have a binary opened in IDA that we know is using ZLib we can match functions directly from the source code by running the IDAPython script ```sourceimp_ida.py``` and selecting in the dialog the zlib-1.2.11.sqlite file we just exported before. After a few seconds, it will discover various functions by, first, just issuing some simple SQL queries and, later on, will find many more symbols by traversing the call graph of the initial matches (that should have near zero false positives) and find more matches. At the same time, you should have all the structures and enumerations that were found while parsing the ZLib source code.
 
 And that's it! Hopefully, it will make the life of reverse engineers easier and we will have to spend less time doing boring tasks like importing symbols or waste time reverse engineering open source libraries statically compiled in our targets.
+
+## License
+
+Pigaios is released under the GPL v3 license but commercial licenses for proprietary developments can be purchased. Contact admin AT joxeankoret DOT com for more details.
