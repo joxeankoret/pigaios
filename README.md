@@ -1,6 +1,6 @@
 # Pigaios
 
-Pigaios ('πηγαίος', Greek for 'source' as in 'source code') is a tool for diffing/matching source codes directly against binaries. The idea is to point a tool to a code base, regardless of it being compilable or not (for example, partial source code or source code for platforms not at your hand), extract information from that code base and, then, import in an IDA database function names (symbols), structures and enumerations. It uses the Python CLang bindings (which are very limited, but still better than using pycparser).
+Pigaios ('πηγαίος', Greek for 'source' as in 'source code') is a tool for diffing/matching source codes directly against binaries published under the GPL v3 license (althought commercial licenses for proprietary developments might be available; contact admin AT joxeankoret DOT com for more details). The idea is to point a tool to a code base, regardless of it being compilable or not (for example, partial source code or source code for platforms not at your hand), extract information from that code base and, then, import in an IDA database function names (symbols), structures and enumerations. It uses the Python CLang bindings (which are very limited, but still better than using pycparser).
 
 Basically, the tool does the following:
 
