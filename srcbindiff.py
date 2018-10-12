@@ -8,7 +8,8 @@ import ConfigParser
 from exporters.base_support import is_source_file
 
 try:
-  from colorama import colorama_text, Style
+  from colorama import colorama_text, Style, init
+  init()
   has_colorama = True
 except:
   has_colorama = False
