@@ -237,9 +237,9 @@ def main():
     pass
 
   exit_cmds = ["q", "exit", "quit"]
-  print "Simple C expressions calculator"
-  print "Use %s to exit" % ", ".join(map(repr, exit_cmds))
-  print
+  print("Simple C expressions calculator")
+  print("Use %s to exit" % ", ".join(map(repr, exit_cmds)))
+  print()
 
   evaluator = SimpleEval()
   while 1:
@@ -249,7 +249,7 @@ def main():
     elif cmd == "":
       continue
 
-    print evaluator.eval(cmd)
+    print(evaluator.eval(cmd))
 
 if __name__ == "__main__":
   main()

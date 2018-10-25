@@ -97,7 +97,7 @@ BANNED_FUNCTIONS = ['__asprintf_chk',
 
 #-------------------------------------------------------------------------------
 def log(msg):
-  print "[%s] %s" % (time.asctime(), msg)
+  print("[%s] %s" % (time.asctime(), msg))
 
 #-------------------------------------------------------------------------------
 def debug(msg):
@@ -221,7 +221,7 @@ class CPigaiosTrainer:
 
 #-------------------------------------------------------------------------------
 def usage():
-  print "Usage: %s <source database> <binary database> <dataset>" % sys.argv[0]
+  print("Usage: %s <source database> <binary database> <dataset>" % sys.argv[0])
 
 #-------------------------------------------------------------------------------
 def main(src_db, bin_db, dataset):
