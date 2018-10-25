@@ -29,7 +29,7 @@ except ImportError:
 
 #-----------------------------------------------------------------------
 def sourceimp_log(msg):
-  print "[%s] %s" % (time.asctime(), msg)
+  print("[%s] %s" % (time.asctime(), msg))
 
 # Horrible workaround...
 if not from_ida:
@@ -58,7 +58,7 @@ def quick_ratio(buf1, buf2):
     s = difflib.SequenceMatcher(None, buf1, buf2)
     return s.quick_ratio()
   except:
-    print "quick_ratio:", str(sys.exc_info()[1])
+    print("quick_ratio:", str(sys.exc_info()[1]))
     return 0
 
 #-------------------------------------------------------------------------------
@@ -575,7 +575,8 @@ class CBinaryToSourceImporter:
             msg = "Cartesian product finding %ss for SRC=%d/BIN=0x%08x(%s) too big (%d)..."
             log(msg % (call_type, src_id, long(bin_ea), row["name"], len(bin_rows) * len(src_rows)))
           elif len(bin_rows) > 0:
-            if _DEBUG: print "Finding matches in a cartesian product of %d x %d row(s)" % (len(src_rows), len(bin_rows))
+            if _DEBUG:
+              print("Finding matches in a cartesian product of %d x %d row(s)" % (len(src_rows), len(bin_rows)))
             for src_row in src_rows:
               for bin_row in bin_rows:
                 curr_bin_id = self.get_binary_func_id(bin_row[call_type])

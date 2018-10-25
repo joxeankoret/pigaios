@@ -34,7 +34,7 @@ class CSBDProject:
 
   def create_project(self, path, project_file):
     if os.path.exists(project_file):
-      print "Project file %s already exists." % repr(project_file)
+      print("Project file %s already exists." % repr(project_file))
       return False
 
     config = ConfigParser.RawConfigParser()
@@ -97,35 +97,35 @@ class CSBDExporter:
       else:
         exporter.export_parallel()
     except KeyboardInterrupt:
-      print "Aborted."
+      print("Aborted.")
       return
 
     if exporter.warnings + exporter.errors + exporter.fatals > 0:
       msg = "\n%d warning(s), %d error(s), %d fatal error(s)"
-      print msg % (exporter.warnings, exporter.errors, exporter.fatals)
+      print(msg % (exporter.warnings, exporter.errors, exporter.fatals))
 
 #-------------------------------------------------------------------------------
 def usage():
   if has_colorama:
     with colorama_text():
-      print Style.BRIGHT + SBD_BANNER + Style.RESET_ALL
+      print(Style.BRIGHT + SBD_BANNER + Style.RESET_ALL ))
   else:
-    print SBD_BANNER
+    print(SBD_BANNER)
 
-  print
-  print "Usage:", sys.argv[0], "<options>"
-  print
-  print "Options:"
-  print
-  print "-create            Create a project in the current directory and discover source files."
-  print "-export            Export the current project to one SQLite database."
-  print "-project <file>    Use <file> as the project filename."
-  print "-clang             Use the 'Clang Python bindings' to parse the source files (default)."
-  print "-parallel          Parallelize the compilation process (slower for small code bases)."
-  print "--profile-export   Execute the command and show profiling data."
-  print "-test              Test for the availability of exporters"
-  print "-help              Show this help."
-  print
+  print()
+  print("Usage:", sys.argv[0], "<options>")
+  print()
+  print("Options:")
+  print()
+  print("-create            Create a project in the current directory and discover source files.")
+  print("-export            Export the current project to one SQLite database.")
+  print("-project <file>    Use <file> as the project filename.")
+  print("-clang             Use the 'Clang Python bindings' to parse the source files (default).")
+  print("-parallel          Parallelize the compilation process (slower for small code bases).")
+  print("--profile-export   Execute the command and show profiling data.")
+  print("-test              Test for the availability of exporters")
+  print("-help              Show this help.")
+  print()
 
 #-------------------------------------------------------------------------------
 def main():
@@ -143,7 +143,7 @@ def main():
     if arg in ["-create", "-c"]:
       sbd_project = CSBDProject()
       if sbd_project.create_project(os.getcwd(), project_file):
-        print "Project file %s created." % repr(project_file)
+        print( "Project file %s created." % repr(project_file))
     elif arg == "-project":
       next_project_name = True
     elif arg == "-clang":
@@ -159,13 +159,13 @@ def main():
       exported = True
       profiler.print_stats(sort="time")
     elif arg in ["-test", "-t"]:
-      print "Has Clang Python Bindings: %s" % has_clang
+      print("Has Clang Python Bindings: %s" % has_clang)
     elif arg in ["-parallel"]:
       parallel = True
     elif arg in ["-help", "-h"]:
       usage()
     else:
-      print "Unsupported command line argument %s" % repr(arg)
+      print("Unsupported command line argument %s" % repr(arg))
 
 if __name__ == "__main__":
   if len(sys.argv) == 1:

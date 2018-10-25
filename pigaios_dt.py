@@ -146,21 +146,21 @@ class CPigaiosDecisionTree:
 
 #-------------------------------------------------------------------------------
 def usage():
-  print "Usage: %s [options]" % sys.argv[0]
-  print
-  print "--train                  Train the decision tree."
-  print "--verify                 Test the trained decision tree."
-  print "--classifier             Use a decision tree classifier."
-  print "--regressor              Use a decision tree regressor."
-  print "--graphviz               Show the generated decision tree."
-  print "--criterion-mse          Set the regressor criterion to MSE."
-  print "--criterion-fmse         Set the regressor criterion to Friedman's MSE."
+  print("Usage: %s [options]" % sys.argv[0])
+  print()
+  print("--train                  Train the decision tree.")
+  print("--verify                 Test the trained decision tree.")
+  print("--classifier             Use a decision tree classifier.")
+  print("--regressor              Use a decision tree regressor.")
+  print("--graphviz               Show the generated decision tree.")
+  print("--criterion-mse          Set the regressor criterion to MSE.")
+  print("--criterion-fmse         Set the regressor criterion to Friedman's MSE.")
   if SK_VERSION >= 18:
-    print "--criterion-mae          Set the regressor criterion to MAE."
-  print "--criterion-gini         Set the classifier criterion to Gini."
-  print "--criterion-entropy      Set the classifier criterion to entropy."
-  print "--plot                   Plot the accuracy differences between a classifier and a regressor"
-  print
+    print("--criterion-mae          Set the regressor criterion to MAE.")
+  print("--criterion-gini         Set the classifier criterion to Gini.")
+  print("--criterion-entropy      Set the classifier criterion to entropy.")
+  print("--plot                   Plot the accuracy differences between a classifier and a regressor")
+  print()
 
 #-------------------------------------------------------------------------------
 def main(args):

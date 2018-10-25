@@ -349,7 +349,7 @@ class CDiffChooser(Choose2):
         Warning("Cannot decompile function 0x%08x" % ea)
         return False
 
-      #print "Diffing", row[0], type(row[0]), ea, type(ea)
+      #print("Diffing", row[0], type(row[0]), ea, type(ea))
       buf1 = indent_source(row[0])
       buf2 = proto
       buf2 += "\n".join(self.differ.pseudo[ea])
