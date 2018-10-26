@@ -444,9 +444,9 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
       self.choose_best_matches(is_final = True)
       if len(self.best_matches) > 0:
         matches = True
-    
+
     if matches:
-      c = CDiffChooser(self, "Matched functions", self.best_matches, self)
+      c = CDiffChooser(self, "Matched functions for %s" % os.path.basename(src_db), self.best_matches, self)
       c.show()
 
       if _DEBUG:

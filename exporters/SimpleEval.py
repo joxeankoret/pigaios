@@ -16,6 +16,8 @@ BUGS: It supports decimal, octal and hexadecimal numbers. However, only integers
 and floats can be negatives.
 """
 
+from __future__ import print_function
+
 import re
 import math
 import shlex
@@ -23,13 +25,14 @@ import string
 
 from decimal import Decimal
 
+#-------------------------------------------------------------------------------
 __version__ = '1.0'
 __all__ = [
-    'UnsupportedToken',
-    'UnsupportedOperation',
-    'InvalidSyntax',
-    'SimpleEval',
-    'simple_eval',
+  'UnsupportedToken',
+  'UnsupportedOperation',
+  'InvalidSyntax',
+  'SimpleEval',
+  'simple_eval',
 ]
 
 #-------------------------------------------------------------------------------
@@ -237,9 +240,9 @@ def main():
     pass
 
   exit_cmds = ["q", "exit", "quit"]
-  print "Simple C expressions calculator"
-  print "Use %s to exit" % ", ".join(map(repr, exit_cmds))
-  print
+  print("Simple C expressions calculator")
+  print("Use %s to exit" % ", ".join(map(repr, exit_cmds)))
+  print()
 
   evaluator = SimpleEval()
   while 1:
@@ -249,8 +252,7 @@ def main():
     elif cmd == "":
       continue
 
-    print evaluator.eval(cmd)
+    print(evaluator.eval(cmd))
 
 if __name__ == "__main__":
   main()
-

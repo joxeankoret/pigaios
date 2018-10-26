@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import print_function
+
 import os
 import sys
 import json
@@ -373,7 +375,7 @@ class CBinaryToSourceExporter:
     try:
       strongly_connected = strongly_connected_components(bb_relations)
     except:
-      print "Exception:", str(sys.exc_info()[1])
+      print("Exception:", str(sys.exc_info()[1]))
       return False
 
     # ...and get the number of loops out of it
@@ -385,20 +387,20 @@ class CBinaryToSourceExporter:
           loops += 1
 
     if self.debug:
-      print "Name        : %s" % func_name
-      print "Prototype   : %s" % prototype
-      print "Prototype2  : %s" % prototype2
-      print "Conditionals: %d" % conditions
-      print "Constants   : %d" % len(constants)
-      print "Switches    : %d" % len(switches)
-      print "Calls       : %s" % len(calls)
-      print "Callees     : %s" % len(callees)
-      print "Loops       : %d" % loops
-      print "Globals     : %d" % len(externals)
-      print "Recursive   : %d" % recursive
-      print "Indirects   : %d" % indirects
-      print "Global uses : %d" % len(globals_uses)
-      print
+      print("Name        : %s" % func_name)
+      print("Prototype   : %s" % prototype)
+      print("Prototype2  : %s" % prototype2)
+      print("Conditionals: %d" % conditions)
+      print("Constants   : %d" % len(constants))
+      print("Switches    : %d" % len(switches))
+      print("Calls       : %s" % len(calls))
+      print("Callees     : %s" % len(callees))
+      print("Loops       : %d" % loops)
+      print("Globals     : %d" % len(externals))
+      print("Recursive   : %d" % recursive)
+      print("Indirects   : %d" % indirects)
+      print("Global uses : %d" % len(globals_uses))
+      print()
 
     cur = self.db.cursor()
     sql = """insert into functions(

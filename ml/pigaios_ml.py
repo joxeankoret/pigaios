@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+from __future__ import print_function
+
 """
 A decision tree based system for calculating matches ratios.
 Part of the Pigaios Project.
@@ -114,7 +116,7 @@ class CPigaiosMultiClassifier(object):
   def fit(self, X, y):
     threads = []
     for clf in self.clfs.values():
-      print "Fitting", clf
+      print("Fitting", clf)
       t = threading.Thread(target=clf.fit, args=(X, y))
       t.start()
       threads.append(t)
@@ -252,7 +254,7 @@ class CPigaiosClassifier:
         scores = cross_val_score(clf, self.X, self.y, cv=5, scoring='accuracy')
         print("Accuracy: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
       except:
-        print "Error with", clf, ":", sys.exc_info()[1]
+        print("Error with", clf, ":", sys.exc_info()[1])
 
   def graphviz(self):
     if self.clf is None:
@@ -264,26 +266,26 @@ class CPigaiosClassifier:
 
 #-------------------------------------------------------------------------------
 def usage():
-  print "Usage: %s [options]" % sys.argv[0]
-  print
-  print "--multi-classifier       Use the default multi-classifier."
-  print "--train                  Train the classifier."
-  print "--verify                 Test the trained classifier."
-  print "--dt-classifier          Use a decision tree classifier."
-  print "--dt-regressor           Use a decision tree regressor."
-  print "--logistic-regression    Use a logistic regression classifier."
-  print "--sgd-classifier         Use a linear classifier with SGD training."
-  print "--gaussian-naive-bayes   Use a Gaussian Naive Bayes classifier."
-  print "--multinomial-bayes      Use a Gaussian Multinomial Naive Bayes classifier."
-  print "--random-forest          Use a Random Forest classifier."
-  print "--graphviz               Show the generated decision tree."
-  print "--criterion-mse          Set the regressor criterion to MSE."
-  print "--criterion-fmse         Set the regressor criterion to Friedman's MSE."
+  print("Usage: %s [options]" % sys.argv[0])
+  print()
+  print("--multi-classifier       Use the default multi-classifier.")
+  print("--train                  Train the classifier.")
+  print("--verify                 Test the trained classifier.")
+  print("--dt-classifier          Use a decision tree classifier.")
+  print("--dt-regressor           Use a decision tree regressor.")
+  print("--logistic-regression    Use a logistic regression classifier.")
+  print("--sgd-classifier         Use a linear classifier with SGD training.")
+  print("--gaussian-naive-bayes   Use a Gaussian Naive Bayes classifier.")
+  print("--multinomial-bayes      Use a Gaussian Multinomial Naive Bayes classifier.")
+  print("--random-forest          Use a Random Forest classifier.")
+  print("--graphviz               Show the generated decision tree.")
+  print("--criterion-mse          Set the regressor criterion to MSE.")
+  print("--criterion-fmse         Set the regressor criterion to Friedman's MSE.")
   if (SK_MAJOR == 0 and SK_MINOR >= 18) or SK_MAJOR >= 1:
-    print "--criterion-mae          Set the regressor criterion to MAE."
-  print "--criterion-gini         Set the classifier criterion to Gini."
-  print "--criterion-entropy      Set the classifier criterion to entropy."
-  print
+    print("--criterion-mae          Set the regressor criterion to MAE.")
+  print("--criterion-gini         Set the classifier criterion to Gini.")
+  print("--criterion-entropy      Set the classifier criterion to entropy.")
+  print()
 
 #-------------------------------------------------------------------------------
 def main(args):
@@ -356,8 +358,6 @@ def main(args):
     elif arg in ["-fmse", "--criterion-fmse"]:
       pdt.criterion = "friedman_mse"
     elif arg in ["-mae", "--criterion-mae"]:
-      if SK_VERSION < 18:
-        raise Exception("Unsupported in version 1.%d" % SK_VERSION)
       pdt.criterion = "mae"
     elif arg in ["-gini", "--criterion-gini"]:
       pdt.criterion = "gini"

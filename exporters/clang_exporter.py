@@ -238,6 +238,8 @@ class CCLangVisitor:
           self.mul = True
         elif token.spelling == "/":
           self.div = True
+        elif token.spelling in CONDITIONAL_OPERATORS:
+          self.conditions += 1
 
   def visit_PARM_DECL(self, cursor):
     self.local_vars.add(cursor.spelling)
@@ -267,6 +269,22 @@ class CLangParser:
     self.source_path = src
     self.index = clang.cindex.Index.create()
     self.tu = self.index.parse(path=src, args=args)
+    self.diags = self.tu.diagnostics
+    for diag in self.diags:
+      if diag.severity == Diagnostic.Warning:
+        self.warnings += 1
+      elif diag.severity == Diagnostic.Error:
+        self.errors += 1
+      elif diag.severity == Diagnostic.Fatal:
+        self.fatals += 1
+
+      export_log("%s:%d,%d: %s: %s" % (diag.location.file, diag.location.line,
+              diag.location.column, severity2text(diag.severity), diag.spelling))
+
+  def parse_buffer(self, src, buf, args):
+    self.source_path = src
+    self.index = clang.cindex.Index.create()
+    self.tu = self.index.parse(path=src, args=args, unsaved_files=[(src, buf)])
     self.diags = self.tu.diagnostics
     for diag in self.diags:
       if diag.severity == Diagnostic.Warning:
@@ -338,12 +356,40 @@ class CClangExporter(CBaseExporter):
 
     return prototype
 
+  def strip_macros(self, filename):
+    ret = []
+    for line in open(filename, "rb").readlines():
+      line = line.strip("\r").strip("\n")
+      if line.find("#include") == -1 and line.strip(" ").strip("\t").strip(" ").startswith("#"):
+        ret.append("// stripped: %s" % line)
+        continue
+      ret.append(line)
+    return "\n".join(ret)
+
   def export_one(self, filename, args, is_c):
     parser = CLangParser()
     parser.parse(filename, args)
     self.warnings += parser.warnings
     self.errors += parser.errors
     self.fatals += parser.fatals
+
+    things = 0
+    if parser.fatals > 0 or parser.errors > 0:
+      for element in parser.tu.cursor.get_children():
+        fileobj = element.location.file
+        if fileobj is not None and fileobj.name != filename:
+          continue        
+        things += 1
+
+      if things == 0:
+        # We haven't discovered a single thing and errors happened parsing the
+        # file, let's try again but stripping macros this time...
+        new_src = self.strip_macros(filename)
+        parser = CLangParser()
+        parser.parse_buffer(filename, new_src, args)
+        self.warnings += parser.warnings
+        self.errors += parser.errors
+        self.fatals += parser.fatals
 
     db = self.get_db()
     with db as cur:
@@ -360,7 +406,7 @@ class CClangExporter(CBaseExporter):
           name = element.spelling
           self.global_variables = name
 
-        if element.kind == CursorKind.FUNCTION_DECL:
+        if element.kind == CursorKind.FUNCTION_DECL or element.kind == CursorKind.FUNCTION_TEMPLATE:
           static = element.is_static_method()
           tokens = element.get_tokens()
           token = next(tokens, None)
