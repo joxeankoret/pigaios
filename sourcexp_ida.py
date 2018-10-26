@@ -255,7 +255,7 @@ class CBinaryToSourceExporter:
           str_constant = GetString(dref, -1, -1)
           if str_constant is not None:
             if len(str_constant) > 1:
-              #print "0x%x: %s" % (ea, repr(str_constant))
+              #print("0x%x: %s" % (ea, repr(str_constant)))
               constants.add(str(str_constant))
 
     return constants, externals, globals_uses

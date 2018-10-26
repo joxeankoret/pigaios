@@ -29,7 +29,7 @@ def get_terminal_size():
     print("default")
     tuple_xy = (80, 25)    # default value
   return tuple_xy
- 
+
 #------------------------------------------------------------------------------- 
 def _get_terminal_size_windows():
   try:

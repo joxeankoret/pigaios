@@ -194,7 +194,7 @@ class CBaseExporter(object):
   def create_schema(self, filename, remove = False):
     self.filename = filename
     if remove and os.path.exists(filename):
-      print "[i] Removing existing file %s" % filename
+      print("[i] Removing existing file %s" % filename)
       os.remove(filename)
 
     tid = current_thread().ident
@@ -365,7 +365,7 @@ class CBaseExporter(object):
             raise
           except:
             # Ignore unique constraint violations
-            print "final_steps():", str(sys.exc_info()[1])
+            print("final_steps():", str(sys.exc_info()[1]))
 
     cur.execute("COMMIT")
 
@@ -496,7 +496,7 @@ class CBaseExporter(object):
     export_log("[+] Found %d candidate inlined function(s)" % len(inlines))
     for func in inlines:
       if len(inlines[func]) > 10:
-        #print "Too many things to combine, skipping..."
+        #print("Too many things to combine, skipping...")
         continue
 
       pers = list(all_combinations(inlines[func]))
@@ -506,7 +506,7 @@ class CBaseExporter(object):
 
       dones.add(str(pers))
       if len(pers) > 10:
-        #print "Too many combinations, skipping..."
+        #print("Too many combinations, skipping...")
         continue
 
       for per in pers:
@@ -542,7 +542,7 @@ class CBaseExporter(object):
       if int(self.config.get('GENERAL', 'inlines')) == 1:
         self.build_inlines(cur)
     except:
-      print "Error:", str(sys.exc_info()[1])
+      print("Error:", str(sys.exc_info()[1]))
 
     self.create_indexes(cur)
     cur.close()

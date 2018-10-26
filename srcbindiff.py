@@ -163,7 +163,7 @@ def main():
     elif arg in ["-test", "-t"]:
       print("Has Clang Python Bindings: %s" % has_clang)
     elif arg in ["--no-parallel"]:
-      parallel = True
+      parallel = False
     elif arg in ["-help", "-h"]:
       usage()
     else:
