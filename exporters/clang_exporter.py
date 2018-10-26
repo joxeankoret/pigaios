@@ -57,7 +57,7 @@ def dump_ast(cursor, level = 0):
   token = next(cursor.get_tokens(), None)
   if token is not None:
     token = token.spelling
-  print "  "*level, cursor.kind, repr(cursor.spelling), repr(token), cursor.location
+  print("  "*level, cursor.kind, repr(cursor.spelling), repr(token), cursor.location)
   for children in cursor.get_children():
     dump_ast(children, level+1)
 
@@ -96,7 +96,7 @@ class CCLangVisitor:
     # will return the textual representation in the source code file before the
     # preprocessor is run. Well, CLang...
 
-    #print "Visiting LITERAL", cursor.spelling
+    #print("Visiting LITERAL", cursor.spelling)
     for token in cursor.get_tokens():
       if token.kind != TokenKind.LITERAL:
         continue
@@ -117,7 +117,7 @@ class CCLangVisitor:
       break
 
   def visit_ENUM_DECL(self, cursor):
-    #print "Visiting ENUM DECL"
+    #print("Visiting ENUM DECL")
     value = 0
     for children in cursor.get_children():
       tokens = list(children.get_tokens())
@@ -142,7 +142,7 @@ class CCLangVisitor:
     return True
 
   def visit_IF_STMT(self, cursor):
-    #print "Visiting IF_STMT"
+    #print("Visiting IF_STMT")
     # Perform some (fortunately) not too complex parsing of the IF_STMT as the
     # Clang Python bindings always lack support for everything half serious one
     # needs to do...
@@ -172,7 +172,7 @@ class CCLangVisitor:
     self.conditions += tmp_conds
 
   def visit_CALL_EXPR(self, cursor):
-    #print "Visiting CALL_EXPR"
+    #print("Visiting CALL_EXPR")
     if cursor.spelling == self.name:
       self.recursive = True
 
@@ -190,7 +190,7 @@ class CCLangVisitor:
       self.calls[cursor.spelling] = 1
 
   def visit_loop(self, cursor):
-    #print "Visiting LOOP"
+    #print("Visiting LOOP")
     self.loops += 1
 
   def visit_WHILE_STMT(self, cursor):
@@ -203,7 +203,7 @@ class CCLangVisitor:
     self.visit_loop(cursor)
 
   def visit_SWITCH_STMT(self, cursor):
-    #print "Visiting SWITCH_STMT"
+    #print("Visiting SWITCH_STMT")
     # As always, the easiest way to get the cases and values from a SWITCH_STMT
     # using the CLang Python bindings is by parsing the tokens...
     cases = set()
