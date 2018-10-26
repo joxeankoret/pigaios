@@ -21,7 +21,7 @@ try:
   from ml import pigaios_ml
   reload(pigaios_ml)
 
-  from ml.pigaios_ml import CPigaiosClassifier
+  from ml.pigaios_ml import CPigaiosClassifier, CPigaiosMultiClassifier
   has_ml = True
 except ImportError:
   has_ml = False
