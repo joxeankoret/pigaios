@@ -124,7 +124,7 @@ def usage():
   print("-export            Export the current project to one SQLite database.")
   print("-project <file>    Use <file> as the project filename.")
   print("-clang             Use the 'Clang Python bindings' to parse the source files (default).")
-  print("-parallel          Parallelize the compilation process (slower for small code bases).")
+  print("--no-parallel      Do not parallelize the compilation process (faster for small code bases).")
   print("--profile-export   Execute the command and show profiling data.")
   print("-test              Test for the availability of exporters")
   print("-help              Show this help.")
@@ -135,7 +135,7 @@ def main():
   use_clang = True
   project_file = DEFAULT_PROJECT_FILE
   next_project_name = False
-  parallel = False
+  parallel = True
 
   for arg in sys.argv[1:]:
     if next_project_name:
@@ -159,11 +159,10 @@ def main():
       profiler = cProfile.Profile()
       exporter = CSBDExporter(project_file, parallel)
       profiler.runcall(exporter.export, (use_clang,))
-      exported = True
       profiler.print_stats(sort="time")
     elif arg in ["-test", "-t"]:
       print("Has Clang Python Bindings: %s" % has_clang)
-    elif arg in ["-parallel"]:
+    elif arg in ["--no-parallel"]:
       parallel = True
     elif arg in ["-help", "-h"]:
       usage()

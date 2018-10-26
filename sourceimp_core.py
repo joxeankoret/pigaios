@@ -9,10 +9,11 @@ import difflib
 import sqlite3
 
 try:
-  from sourcexp_ida import log, CBinaryToSourceExporter
+  from sourcexp_ida import log
   from_ida = True
 except ImportError:
   from_ida = False
+  log = None
 
 try:
   import numpy as np
@@ -20,7 +21,7 @@ try:
   from ml import pigaios_ml
   reload(pigaios_ml)
 
-  from ml.pigaios_ml import *
+  from ml.pigaios_ml import CPigaiosClassifier
   has_ml = True
 except ImportError:
   has_ml = False
@@ -628,7 +629,6 @@ class CBinaryToSourceImporter:
     cur.execute(sql, (str(bin_ea), ))
     row = cur.fetchone()
     if row is not None:
-      bin_id = row["id"]
       src_rows = list(self.get_source_call_type(src_id, call_type))
       if src_rows is not None and len(src_rows) > 0:
         bin_rows = list(self.get_binary_call_type(bin_ea, call_type))
