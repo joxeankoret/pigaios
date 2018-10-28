@@ -62,6 +62,10 @@ def dump_ast(cursor, level = 0):
     dump_ast(children, level+1)
 
 #-------------------------------------------------------------------------------
+def json_dump(x):
+  return json.dumps(x, ensure_ascii=False)
+
+#-------------------------------------------------------------------------------
 class CCLangVisitor:
   def __init__(self, name):
     self.conditions = 0
@@ -437,10 +441,10 @@ class CClangExporter(CBaseExporter):
                                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                                   ?, ?, ?, ?, ?)"""
           args = (obj.name, prototype, prototype2, obj.conditions,
-                  len(obj.constants), json.dumps(list(obj.constants)),
-                  obj.loops, len(obj.switches), json.dumps(list(obj.switches)),
+                  len(obj.constants), json_dump(list(obj.constants)),
+                  obj.loops, len(obj.switches), json_dump(list(obj.switches)),
                   len(obj.calls.keys()), len(obj.externals),
-                  filename, json.dumps(obj.calls), source, obj.recursive,
+                  filename, json_dump(obj.calls), source, obj.recursive,
                   len(obj.indirects), len(obj.globals_uses), obj.is_inlined,
                   obj.is_static, )
           self.insert_row(sql, args, cur)

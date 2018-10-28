@@ -400,7 +400,7 @@ class CBaseExporter(object):
     for x in ret2:
       if x not in ret1:
         ret1.append(x)
-    return json.dumps(ret1)
+    return json.dumps(ret1, ensure_ascii=False)
 
   def create_inline(self, cur, func, per):
     curr_func = self.get_function_data(func, cur)
