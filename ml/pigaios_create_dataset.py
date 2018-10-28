@@ -9,6 +9,7 @@ import json
 import time
 import sqlite3
 import numpy as np
+from others.py3compat import *
 
 #-------------------------------------------------------------------------------
 _DEBUG = False
@@ -135,7 +136,7 @@ class CPigaiosTrainer:
 
       if field == "switchs_json":
         ret[field] = int(row["src_%s" % field] == row["bin_%s" % field])
-      elif type(row["src_%s" % field]) in [int, long]:
+      elif type(row["src_%s" % field]) in integer_types:
         ret["src_%s" % field] = int(row["src_%s" % field])
         ret["bin_%s" % field] = int(row["bin_%s" % field])
         ret["%s_diff" % field] = abs(row["src_%s" % field] - row["bin_%s" % field])

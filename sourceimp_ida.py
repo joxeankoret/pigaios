@@ -8,6 +8,7 @@ import shlex
 import difflib
 import sqlite3
 import operator
+from others.py3compat import *
 
 from subprocess import Popen, PIPE, STDOUT
 

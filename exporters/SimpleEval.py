@@ -24,6 +24,7 @@ import shlex
 import string
 
 from decimal import Decimal
+from others.py3compat import *
 
 #-------------------------------------------------------------------------------
 __version__ = '1.0'

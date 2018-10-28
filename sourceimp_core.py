@@ -7,6 +7,7 @@ import json
 import time
 import difflib
 import sqlite3
+from others.py3compat import *
 
 try:
   from sourcexp_ida import log
@@ -157,7 +158,7 @@ class CBinaryToSourceImporter:
 
       if field == "switchs_json":
         ret[field] = int(src_row[field] == bin_row[field])
-      elif type(src_row[field]) in [int, long]:
+      elif type(src_row[field]) in integer_types:
         ret["src_%s" % field] = int(src_row[field])
         ret["bin_%s" % field] = int(bin_row[field])
         ret[field] = abs(src_row[field] - bin_row[field])
@@ -244,7 +245,7 @@ class CBinaryToSourceImporter:
       if src_row[field] == bin_row[field] and field == "name":
         score += 3 * len(fields)
         reasons.append("Same function name")
-      elif type(src_row[field]) in [int, long]:
+      elif type(src_row[field]) in integer_types:
         if src_row[field] == bin_row[field]:
           score += 1.1
           non_zero_num_matches += int(src_row[field] != 0)

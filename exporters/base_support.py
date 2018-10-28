@@ -7,6 +7,7 @@ import shlex
 import sqlite3
 import itertools
 import ConfigParser
+from others.py3compat import *
 
 from threading import current_thread
 from terminalsize import get_terminal_size
