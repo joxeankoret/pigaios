@@ -57,9 +57,36 @@ def dump_ast(cursor, level = 0):
   token = next(cursor.get_tokens(), None)
   if token is not None:
     token = token.spelling
-  print("  "*level, cursor.kind, repr(cursor.spelling), repr(token), cursor.location)
+
+  print("  "*level, cursor.kind, repr(cursor.spelling), repr(token), cursor.type.spelling, cursor.location)
   for children in cursor.get_children():
     dump_ast(children, level+1)
+
+#-------------------------------------------------------------------------------
+def cursor2expr(element, level = 0):
+  ret = []
+  if element.kind == CursorKind.TYPEDEF_DECL and element.kind.is_declaration():
+    ret.append(element.underlying_typedef_type.spelling)
+  else:
+    ret.append(element.type.spelling)
+
+  if element.kind == CursorKind.STRUCT_DECL:
+    ret.append("{")
+
+  for children in element.get_children():
+    ret.extend(cursor2expr(children))
+    if children.kind == CursorKind.FIELD_DECL:
+      ret.extend(";")
+
+  if element.kind == CursorKind.STRUCT_DECL:
+    ret.append("}")
+
+  ret.append(element.spelling)
+  return ret
+
+#-------------------------------------------------------------------------------
+def json_dump(x):
+  return json.dumps(x, ensure_ascii=False)
 
 #-------------------------------------------------------------------------------
 class CCLangVisitor:
@@ -332,6 +359,9 @@ class CClangExporter(CBaseExporter):
     self.source_cache = {}
     self.global_variables = set()
 
+    self.header_files = []
+    self.src_definitions = []
+
   def get_function_source(self, cursor):
     start_line = cursor.extent.start.line
     end_line   = cursor.extent.end.line
@@ -366,6 +396,65 @@ class CClangExporter(CBaseExporter):
       ret.append(line)
     return "\n".join(ret)
 
+  def parse_struct(self, element):
+    children = list(element.get_children())
+    struct_name = element.spelling
+    is_forward = len(children) == 0
+    if is_forward:
+      return struct_name, "struct %s;" % struct_name
+
+    tokens = list(element.get_tokens())
+    struct_src = []
+    for tkn in tokens:
+      if tkn.kind is not TokenKind.COMMENT:
+        line = tkn.spelling
+        if tkn.kind is TokenKind.PUNCTUATION:
+          line += "\n"
+        struct_src.append(tkn.spelling)
+    return struct_name, " ".join(struct_src)
+
+  def parse_typedef(self, element):
+    src = None
+    typedef_name = element.spelling
+    if typedef_name is not None:
+      typename = element.underlying_typedef_type.spelling
+      if typename is not None and typename != "":
+        src = "typedef %s %s;" % (typename, typedef_name)
+    return typedef_name, src
+
+  def parse_enum(self, enum):
+    is_anon = enum.type.spelling.find("anonymous at") > -1
+    if not is_anon:
+      enum_name = enum.type.spelling
+    else:
+      enum_name = ""
+
+    ret = ["enum %s {" % enum_name]
+    for kid in enum.get_children():
+      children = kid.get_children()
+      next_kid = next(children, None)
+      token = None
+      if next_kid is not None:
+        tokens_list = next_kid.get_tokens()
+        token = next(tokens_list, None)
+        if token is not None:
+          tkn = token.spelling
+          if token.kind == TokenKind.PUNCTUATION:
+            token = next(tokens_list, None)
+            tkn += token.spelling
+          token = tkn
+
+      if token is None:
+        ret.append("%s," % kid.spelling)
+      else:
+        ret.append("%s = %s," % (kid.spelling, str(token)))
+
+    last = len(ret)-1
+    ret[last] = ret[last].strip(",")
+    ret.append("};")
+    enum_src = "\n".join(ret)
+    return enum_name, enum_src
+
   def export_one(self, filename, args, is_c):
     parser = CLangParser()
     parser.parse(filename, args)
@@ -392,15 +481,37 @@ class CClangExporter(CBaseExporter):
         self.fatals += parser.fatals
 
     db = self.get_db()
+    cwd = os.getcwd()
     with db as cur:
       if not self.parallel:
         cur.execute("PRAGMA synchronous = OFF")
         cur.execute("BEGIN transaction")
 
+      dones = set()
       for element in parser.tu.cursor.get_children():
         fileobj = element.location.file
-        if fileobj is not None and fileobj.name != filename:
-          continue
+        if fileobj is not None:
+          pathname = os.path.realpath(os.path.dirname(fileobj.name))
+          if not pathname.startswith(cwd):
+            continue
+
+          if fileobj.name not in self.header_files:
+            if fileobj.name not in dones:
+              dones.add(fileobj.name)
+
+            if element.kind == CursorKind.STRUCT_DECL:
+              struct_name, struct_src = self.parse_struct(element)
+              self.src_definitions.append(["struct", struct_name, struct_src])
+            elif element.kind == CursorKind.ENUM_DECL:
+              enum_name, enum_src = self.parse_enum(element)
+              self.src_definitions.append(["enum", enum_name, enum_src])
+            elif element.kind == CursorKind.TYPEDEF_DECL:
+              typedef_name, typedef_src = self.parse_typedef(element)
+              if typedef_name is not None and typedef_src is not None:
+                self.src_definitions.append(["typedef", typedef_name, typedef_src])
+
+          if fileobj.name != filename:
+            continue
 
         if element.kind == CursorKind.VAR_DECL:
           name = element.spelling
@@ -437,13 +548,14 @@ class CClangExporter(CBaseExporter):
                                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                                   ?, ?, ?, ?, ?)"""
           args = (obj.name, prototype, prototype2, obj.conditions,
-                  len(obj.constants), json.dumps(list(obj.constants)),
-                  obj.loops, len(obj.switches), json.dumps(list(obj.switches)),
+                  len(obj.constants), json_dump(list(obj.constants)),
+                  obj.loops, len(obj.switches), json_dump(list(obj.switches)),
                   len(obj.calls.keys()), len(obj.externals),
-                  filename, json.dumps(obj.calls), source, obj.recursive,
+                  filename, json_dump(obj.calls), source, obj.recursive,
                   len(obj.indirects), len(obj.globals_uses), obj.is_inlined,
                   obj.is_static, )
           self.insert_row(sql, args, cur)
 
+      self.header_files += list(dones)
       if not self.parallel:
         cur.execute("COMMIT")

@@ -61,6 +61,7 @@ class CSBDProject:
     config.set(section, "cflags", "-I%s -I%s/include" % (path, path))
     config.set(section, "cxxflags", "-I%s -I%s/include" % (path, path))
     config.set(section, "export-file", "%s.sqlite" % base_path)
+    config.set(section, "export-header", "%s-exported.h" % base_path)
 
     # And now add all discovered source files
     section = "FILES"

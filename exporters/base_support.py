@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import json
 import shlex
 import sqlite3
@@ -246,6 +247,13 @@ class CBaseExporter(object):
                           constant text not null)"""
     cur.execute(sql)
 
+    sql = """create table if not exists definitions(
+                          id integer not null primary key,
+                          type text,
+                          name text,
+                          source text)"""
+    cur.execute(sql)
+
     sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
 
@@ -284,6 +292,7 @@ class CBaseExporter(object):
       msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
       export_log(msg)
       self.fatals += 1
+      raise
 
   def export_parallel(self):
     c_args = ["-I%s" % self.config.get('GENERAL', 'includes')]
@@ -321,6 +330,10 @@ class CBaseExporter(object):
 
     with Manager() as manager:
       self.to_insert_rows = manager.list()
+
+      self.header_files = manager.list()
+      self.src_definitions = manager.list()
+
       pool = Pool(total_cpus)
       pool.map(self.do_export_one, pool_args, True)
 
@@ -332,6 +345,9 @@ class CBaseExporter(object):
         args.append(arg)
 
       cur.executemany(sql, args)
+
+      self.header_files = list(self.header_files)
+      self.src_definitions = list(self.src_definitions)
 
     cur.close()
 
@@ -400,7 +416,7 @@ class CBaseExporter(object):
     for x in ret2:
       if x not in ret1:
         ret1.append(x)
-    return json.dumps(ret1)
+    return json.dumps(ret1, ensure_ascii=False)
 
   def create_inline(self, cur, func, per):
     curr_func = self.get_function_data(func, cur)
@@ -534,8 +550,37 @@ class CBaseExporter(object):
 
     cur.execute("COMMIT")
 
+  def build_definitions(self, cur):
+    export_log("[+] Building definitions...")
+
+    try:
+      file_header = self.config.get('PROJECT', 'export-header')
+      f = open(file_header, "wb")
+      f.write("//" + "-"*80 + "\n")
+      f.write("// Header automatically created by Pigaios on %s\n" % time.asctime())
+      f.write("// https://github.com/joxeankoret/pigaios\n")
+      f.write("//" + "-"*80 + "\n\n\n")
+      export_log(" -> Creating headers definition file %s..." % file_header)
+    except:
+      file_header = None
+      f = None
+      raise
+
+    sql = "insert into definitions(type, name, source) values (?, ?, ?)"
+    for def_type, def_name, def_src in self.src_definitions:
+      cur.execute(sql, (def_type, def_name, def_src))
+      if f is not None:
+        pos = def_src.find("\n")
+        if pos > -1: f.write("\n")
+        f.write("%s\n" % def_src)
+        if pos > -1: f.write("\n")
+
+    if f is not None:
+      f.close()
+
   def final_steps(self):
     cur = self.get_db().cursor()
+    self.build_definitions(cur)
     self.build_callgraphs(cur)
     self.build_constants_list(cur)
     try:
@@ -580,6 +625,7 @@ class CBaseExporter(object):
           msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
           export_log(msg)
           self.fatals += 1
+          raise
 
     self.final_steps()
 

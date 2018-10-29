@@ -96,6 +96,10 @@ def seems_false_positive(src_name, bin_name):
   return not bin_name.startswith(src_name)
 
 #-------------------------------------------------------------------------------
+def json_loads(line):
+  return json.loads(line.decode("utf-8","ignore"))
+
+#-------------------------------------------------------------------------------
 class CBinaryToSourceImporter:
   def __init__(self, db_path):
     self.debug = False
@@ -162,8 +166,8 @@ class CBinaryToSourceImporter:
         ret["bin_%s" % field] = int(bin_row[field])
         ret[field] = abs(src_row[field] - bin_row[field])
       elif field.endswith("_json"):
-        src_json = json.loads(src_row[field])
-        bin_json = json.loads(bin_row[field])
+        src_json = json_loads(src_row[field])
+        bin_json = json_loads(bin_row[field])
 
         src_total = len(src_json)
         bin_total = len(bin_json)
@@ -267,8 +271,8 @@ class CBinaryToSourceImporter:
         score += 1. * len(fields)
         reasons.append("Same JSON %s (%s)" % (field, bin_row[field]))
       elif field == "constants_json":
-        src_json = json.loads(src_row[field])
-        bin_json = json.loads(bin_row[field])
+        src_json = json_loads(src_row[field])
+        bin_json = json_loads(bin_row[field])
         at_least_one_match = False
         for src_key in src_json:
           if type(src_key) is str and len(src_key) < 4:
@@ -308,8 +312,8 @@ class CBinaryToSourceImporter:
 
         score += sub_score
       elif field == "callees_json":
-        src_json = json.loads(src_row[field])
-        bin_json = json.loads(bin_row[field])
+        src_json = json_loads(src_row[field])
+        bin_json = json_loads(bin_row[field])
         if len(src_json) > 0 and len(bin_json) > 0 and len(src_json) == len(bin_json):
           # Try to match callees that we haven't identified yet between the list
           # of callees in the source and in the binary.

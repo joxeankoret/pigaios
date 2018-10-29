@@ -8,6 +8,7 @@ import shlex
 import difflib
 import sqlite3
 import operator
+import traceback
 
 from subprocess import Popen, PIPE, STDOUT
 
@@ -312,7 +313,7 @@ class CDiffChooser(Choose2):
       msg = "\n".join(reasons)
       info(msg)
     elif cmd_id == self.cmd_import_all:
-      if askyn_c(0, "HIDECANCEL\nDo you really want to import all matched functions?") == 1:
+      if askyn_c(0, "HIDECANCEL\nDo you really want to import all matched functions as well as struct, enum and typedef definitions?") == 1:
         import_items = []
         for item in self.items:
           src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
@@ -327,7 +328,8 @@ class CDiffChooser(Choose2):
           src_id, src_name, bin_ea = int(item[1]), item[2], int(item[3], 16)
           import_items.append([src_id, src_name, bin_ea])
 
-        self.importer.import_items(import_items)
+        import_definitions = askyn_c(0, "HIDECANCEL\nDo you also want to import all struct, enum and typedef definitions?") == 1
+        self.importer.import_items(import_items, import_definitions = import_definitions)
     elif cmd_id == self.cmd_diff_c:
       html_diff = CHtmlDiff()
       item = self.items[n]
@@ -456,7 +458,17 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
       Warning("No matches found.")
       log("No matches found.")
 
-  def import_items(self, import_items):
+  def import_items(self, import_items, import_definitions=True):
+    if import_definitions:
+      sql = "select type, name, source from definitions"
+      cur = self.db.cursor()
+      cur.execute(sql)
+      rows = list(cur.fetchall())
+      if len(rows) > 0:
+        for row in rows:
+          ret = ParseTypes(row[2])
+      cur.close()
+
     for src_id, src_name, bin_ea in import_items:
       bin_name = GetFunctionName(bin_ea)
       if is_ida_func(bin_name):
@@ -509,6 +521,7 @@ if __name__ == "__main__":
         main()
     except:
       log("ERROR: %s" % str(sys.exc_info()[1]))
+      traceback.print_exc()
       raise
   finally:
     hide_wait_box()
