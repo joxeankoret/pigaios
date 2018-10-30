@@ -63,28 +63,6 @@ def dump_ast(cursor, level = 0):
     dump_ast(children, level+1)
 
 #-------------------------------------------------------------------------------
-def cursor2expr(element, level = 0):
-  ret = []
-  if element.kind == CursorKind.TYPEDEF_DECL and element.kind.is_declaration():
-    ret.append(element.underlying_typedef_type.spelling)
-  else:
-    ret.append(element.type.spelling)
-
-  if element.kind == CursorKind.STRUCT_DECL:
-    ret.append("{")
-
-  for children in element.get_children():
-    ret.extend(cursor2expr(children))
-    if children.kind == CursorKind.FIELD_DECL:
-      ret.extend(";")
-
-  if element.kind == CursorKind.STRUCT_DECL:
-    ret.append("}")
-
-  ret.append(element.spelling)
-  return ret
-
-#-------------------------------------------------------------------------------
 def json_dump(x):
   return json.dumps(x, ensure_ascii=False)
 

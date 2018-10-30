@@ -155,6 +155,10 @@ def is_constant(oper, ea):
   return True
 
 #-------------------------------------------------------------------------------
+def json_dump(x):
+  return json.dumps(x, ensure_ascii=False)
+
+#-------------------------------------------------------------------------------
 class CBinaryToSourceExporter:
   def __init__(self):
     self.debug = False
@@ -411,10 +415,10 @@ class CBinaryToSourceExporter:
                          )
                          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
     args = (str(f), func_name, prototype, prototype2, conditions,
-            len(constants), json.dumps(list(constants)), loops, len(switches),
-            json.dumps(list(switches)), len(calls), len(list(externals)),
+            len(constants), json_dump(list(constants)), loops, len(switches),
+            json_dump(list(switches)), len(calls), len(list(externals)),
             recursive, int(indirects), len(globals_uses),
-            json.dumps(callees))
+            json_dump(callees))
     cur.execute(sql, args)
     rowid = cur.lastrowid
 
