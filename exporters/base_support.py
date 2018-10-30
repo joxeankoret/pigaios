@@ -559,24 +559,43 @@ class CBaseExporter(object):
       f.write("//" + "-"*80 + "\n")
       f.write("// Header automatically created by Pigaios on %s\n" % time.asctime())
       f.write("// https://github.com/joxeankoret/pigaios\n")
-      f.write("//" + "-"*80 + "\n\n\n")
-      export_log(" -> Creating headers definition file %s..." % file_header)
+      f.write("//" + "-"*80 + "\n\n")
+      export_log("[i] Creating headers definition file %s..." % file_header)
     except:
       file_header = None
       f = None
-      raise
 
+    dones = set()
     sql = "insert into definitions(type, name, source) values (?, ?, ?)"
     for def_type, def_name, def_src in self.src_definitions:
+      item = str([def_type, def_name])
       cur.execute(sql, (def_type, def_name, def_src))
       if f is not None:
+        is_redef = item in dones and def_type == "struct"
+        if is_redef: 
+          f.write("\n/** Redefined\n")
+
         pos = def_src.find("\n")
-        if pos > -1: f.write("\n")
+        if pos > -1:
+          f.write("\n")
+
         f.write("%s\n" % def_src)
-        if pos > -1: f.write("\n")
+        if pos > -1:
+          f.write("\n")
+        
+        if is_redef:
+          f.write("*/\n\n")
+
+        dones.add(item)
 
     if f is not None:
       f.close()
+      
+      try:
+        indent = self.config.get('PROJECT', 'export-indent')
+        os.system("%s %s" % (indent, file_header))
+      except:
+        pass
 
   def final_steps(self):
     cur = self.get_db().cursor()

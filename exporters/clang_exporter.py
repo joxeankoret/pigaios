@@ -396,9 +396,70 @@ class CClangExporter(CBaseExporter):
       ret.append(line)
     return "\n".join(ret)
 
+  def element2kind(self, element):
+    if element.kind == CursorKind.STRUCT_DECL:
+      return "struct"
+    elif element.kind == CursorKind.ENUM_DECL:
+      return "enum"
+    elif element.kind == CursorKind.UNION_DECL:
+      return "union"
+    elif element.kind == CursorKind.TYPEDEF_DECL:
+      return "typedef"
+    elif element.kind == CursorKind.ENUM_CONSTANT_DECL:
+      return ""
+    else:
+      return "" # Unknown thing
+
+  def clean_name(self, name):
+    return "".join([c for c in name if c.isalpha() or c.isdigit() or c == "_"]).rstrip()
+
+  def get_field(self, element):
+    type_name = element.type.spelling
+    elem_name = self.clean_name(element.spelling)
+
+    kind = self.element2kind(element)
+    is_anon = type_name.find("(anonymous at") > -1
+    if is_anon:
+      type_name = kind
+
+    ret = []
+    ret.append(type_name)
+    if elem_name == "" and not elem_name.startswith(kind) and not is_anon:
+      ret.insert(0, self.element2kind(element))
+
+    children = list(element.get_children())
+    if len(children) > 0: ret.append("{")
+    for field in children:
+      if field.kind == CursorKind.FIELD_DECL:
+        field_name = field.spelling
+        type_name  = field.type.spelling
+        if type_name.find("(anonymous ") > -1:
+          type_name = ""
+
+        pos = type_name.find("[")
+        if pos > -1:
+          ret.append(type_name[:pos] + field_name + type_name[pos:] + ";")
+        else:
+          ret.append("%s %s;" % (type_name, field_name))
+      else:
+        name, src = self.get_field(field)
+        ret.append(src)
+
+    if len(children) > 0:
+      ret.append("}")
+
+    if not is_anon:
+      ret.append(";")
+
+    ret = "\n".join(ret)
+    return elem_name, ret
+
   def parse_struct(self, element):
     children = list(element.get_children())
     struct_name = element.spelling
+    if struct_name is None or struct_name == "":
+      struct_name = element.type.spelling
+
     is_forward = len(children) == 0
     if is_forward:
       return struct_name, "struct %s;" % struct_name
@@ -407,10 +468,15 @@ class CClangExporter(CBaseExporter):
     struct_src = []
     for tkn in tokens:
       if tkn.kind is not TokenKind.COMMENT:
-        line = tkn.spelling
-        if tkn.kind is TokenKind.PUNCTUATION:
-          line += "\n"
         struct_src.append(tkn.spelling)
+        if tkn.kind is TokenKind.PUNCTUATION and \
+           tkn.spelling in [";", "}"]:
+          struct_src[len(struct_src)-1] += "\n"
+
+    if struct_src[0] == "struct" and struct_src[1] in ["{", "{\n"]:
+      struct_src.insert(1, struct_name)
+
+    struct_src.append(";")
     return struct_name, " ".join(struct_src)
 
   def parse_typedef(self, element):
@@ -419,7 +485,14 @@ class CClangExporter(CBaseExporter):
     if typedef_name is not None:
       typename = element.underlying_typedef_type.spelling
       if typename is not None and typename != "":
-        src = "typedef %s %s;" % (typename, typedef_name)
+        func_pointer_str = " (*)("
+        pos = typename.find(func_pointer_str)
+        if pos == -1 :
+          src = "typedef %s %s;" % (typename, typedef_name)
+        else:
+          tmp = "typedef " + typename[:pos] + " (*%s)(" % typedef_name + typename[pos+len(func_pointer_str):] + ";"
+          src = tmp
+
     return typedef_name, src
 
   def parse_enum(self, enum):
@@ -429,7 +502,11 @@ class CClangExporter(CBaseExporter):
     else:
       enum_name = ""
 
-    ret = ["enum %s {" % enum_name]
+    if not enum_name.startswith("enum "):
+      line = "enum %s {" % enum_name
+    else:
+      line = "%s {" % enum_name
+    ret = [line]
     for kid in enum.get_children():
       children = kid.get_children()
       next_kid = next(children, None)
@@ -500,9 +577,10 @@ class CClangExporter(CBaseExporter):
               dones.add(fileobj.name)
 
             if element.kind == CursorKind.STRUCT_DECL:
-              struct_name, struct_src = self.parse_struct(element)
+              struct_name, struct_src = self.get_field(element)
               self.src_definitions.append(["struct", struct_name, struct_src])
             elif element.kind == CursorKind.ENUM_DECL:
+              ret = self.get_field(element)
               enum_name, enum_src = self.parse_enum(element)
               self.src_definitions.append(["enum", enum_name, enum_src])
             elif element.kind == CursorKind.TYPEDEF_DECL:
