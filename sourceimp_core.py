@@ -405,7 +405,7 @@ class CBinaryToSourceImporter:
     total = row[0]
 
     if has_ml:
-      log("Decision tree based system available")
+      log("ML based system available")
 
     log("Finding best matches...")
     rows = []
