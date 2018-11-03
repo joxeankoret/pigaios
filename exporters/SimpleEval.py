@@ -146,7 +146,7 @@ class SimpleEval:
     return names
 
   def get_number(self, token):
-    strips = ["L", "l", "U", "u", "L", "l", "U", "u"]
+    strips = ["L", "l", "U", "u", "L", "l", "U", "u", "p"]
     for strip in strips:
       if token.endswith(strip):
         token = token.strip(strip)
@@ -157,6 +157,8 @@ class SimpleEval:
         token += "0"
 
     if token.startswith("0x"):
+      if token.endswith(".0"):
+        token = token.rstrip(".0")
       token = long(token, 16)
     elif token[0] == "0" and len(token) == 1 and token.find(".") == -1:
       token = long(token, 8)
@@ -173,7 +175,7 @@ class SimpleEval:
 
     lex = shlex.shlex(expr)
     lex.wordchars += ".-"
-    lex.whitespace += "()"
+    lex.whitespace += "()-"
     tokens = list(lex)
 
     op = None

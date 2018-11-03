@@ -8,10 +8,15 @@ from clang.cindex import Diagnostic, CursorKind, TokenKind
 
 from base_support import *
 from SimpleEval import simple_eval
+from simple_macro_parser import CMacroExtractor
 
 #-------------------------------------------------------------------------------
 CONDITIONAL_OPERATORS = ["==", "!=", "<", ">", ">=", "<=", "?"]
 INLINE_NAMES = ["inline", "__inline", "__inline__", "__forceinline", "always_inline"]
+
+SCAN_ELEMENTS = [CursorKind.FUNCTION_DECL, CursorKind.FUNCTION_TEMPLATE,
+                 CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR,
+                 CursorKind.DESTRUCTOR]
 
 #-------------------------------------------------------------------------------
 def severity2text(severity):
@@ -118,7 +123,11 @@ class CCLangVisitor:
         self.constants.add(tmp)
         continue
 
-      result = simple_eval(tmp)
+      try:
+        result = simple_eval(tmp)
+      except:
+        pass
+
       break
 
   def visit_ENUM_DECL(self, cursor):
@@ -542,6 +551,13 @@ class CClangExporter(CBaseExporter):
         cur.execute("PRAGMA synchronous = OFF")
         cur.execute("BEGIN transaction")
 
+      # Extract macros and magically group and convert them to enums.
+      extractor = CMacroExtractor()
+      enums = extractor.extract(filename)
+      for name in enums:
+        if name != "" and len(enums[name]) > 0:
+          self.src_definitions.append(["enum", name, enums[name]])
+
       dones = set()
       for element in parser.tu.cursor.get_children():
         fileobj = element.location.file
@@ -573,7 +589,7 @@ class CClangExporter(CBaseExporter):
           name = element.spelling
           self.global_variables = name
 
-        if element.kind == CursorKind.FUNCTION_DECL or element.kind == CursorKind.FUNCTION_TEMPLATE:
+        if element.kind in SCAN_ELEMENTS:
           static = element.is_static_method()
           tokens = element.get_tokens()
           token = next(tokens, None)
