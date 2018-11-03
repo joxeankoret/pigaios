@@ -26,12 +26,25 @@ except:
 VERSION_VALUE = "Pigaios Source Exporter 1.0"
 
 #-------------------------------------------------------------------------------
-CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp"]
+CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp", ".m"]
+OBJC_EXTENSIONS = [".m"]
+
 if has_colorama:
-  COLOR_SUBSTRS  = {"CC ":Fore.GREEN,
-                    "CXX ":Fore.GREEN, 
+  COLOR_SUBSTRS  = {"CC "  :Fore.GREEN,
+                    "CXX " :Fore.GREEN, 
+                    "OBJC":Fore.GREEN,
                     " warning:":Fore.RED, " error:":Fore.RED,
                     " fatal:":Fore.RED}
+
+HEADER_EXTENSIONS = [".h", ".hpp"]
+
+#-------------------------------------------------------------------------------
+def is_header_file(arg):
+  tmp = arg.lower()
+  for ext in HEADER_EXTENSIONS:
+    if tmp.endswith(ext):
+      return True
+  return False
 
 #-------------------------------------------------------------------------------
 def is_source_file(arg):
@@ -40,6 +53,10 @@ def is_source_file(arg):
     if tmp.endswith(ext):
       return True
   return False
+
+#-------------------------------------------------------------------------------
+def is_objc_source(arg):
+  return arg.lower().endswith(".m")
 
 #-------------------------------------------------------------------------------
 def is_c_source(arg):
@@ -278,8 +295,10 @@ class CBaseExporter(object):
   def do_export_one(self, args_list):
     self.parallel = True
     filename, args, is_c = args_list
-    if is_c:
+    if is_c == 1:
       msg = "[+] CC %s %s" % (filename, " ".join(args))
+    elif is_c == 2:
+      msg = "[+] OBJC %s %s" % (filename, " ".join(args))
     else:
       msg = "[+] CXX %s %s" % (filename, " ".join(args))
     export_log(msg)
@@ -313,11 +332,15 @@ class CBaseExporter(object):
         if is_c_source(filename):
           args = c_args
           msg = "[+] CC %s %s" % (filename, " ".join(args))
-          is_c = True
+          is_c = 1
+        elif is_objc_source(filename):
+          args = c_args
+          msg = "[+] OBJC %s %s" % (filename, " ".join(args))
+          is_c = 2
         else:
           args = cpp_args
           msg = "[+] CXX %s %s" % (filename, " ".join(args))
-          is_c = False
+          is_c = 0
 
         pool_args.append((filename, args, is_c,))
 

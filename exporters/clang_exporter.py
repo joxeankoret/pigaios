@@ -16,7 +16,7 @@ INLINE_NAMES = ["inline", "__inline", "__inline__", "__forceinline", "always_inl
 
 SCAN_ELEMENTS = [CursorKind.FUNCTION_DECL, CursorKind.FUNCTION_TEMPLATE,
                  CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR,
-                 CursorKind.DESTRUCTOR]
+                 CursorKind.DESTRUCTOR, CursorKind.OBJC_INSTANCE_METHOD_DECL]
 
 #-------------------------------------------------------------------------------
 def severity2text(severity):
@@ -405,7 +405,7 @@ class CClangExporter(CBaseExporter):
     elem_name = self.clean_name(element.spelling)
 
     kind = self.element2kind(element)
-    is_anon = type_name.find("(anonymous at") > -1
+    is_anon = type_name.find("(anonymous ") > -1
     if is_anon:
       type_name = kind
 
@@ -483,7 +483,7 @@ class CClangExporter(CBaseExporter):
     return typedef_name, src
 
   def parse_enum(self, enum):
-    is_anon = enum.type.spelling.find("anonymous at") > -1
+    is_anon = enum.type.spelling.find("anonymous ") > -1
     if not is_anon:
       enum_name = enum.type.spelling
     else:

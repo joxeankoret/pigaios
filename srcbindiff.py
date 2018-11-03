@@ -7,7 +7,7 @@ import sys
 import popen2
 import ConfigParser
 
-from exporters.base_support import is_source_file
+from exporters.base_support import is_source_file, is_header_file
 
 try:
   from colorama import colorama_text, Style, init
@@ -30,6 +30,9 @@ DEFAULT_PROJECT_FILE = "sbd.project"
 
 #-------------------------------------------------------------------------------
 class CSBDProject:
+  def __init__(self):
+    self.analyze_headers = False
+
   def resolve_clang_includes(self):
     cmd = "clang -print-file-name=include"
     rfd, wfd = popen2.popen2(cmd)
@@ -69,7 +72,7 @@ class CSBDProject:
     config.add_section(section)
     for root, dirs, files in os.walk(path, topdown=False):
       for name in files:
-        if is_source_file(name):
+        if is_source_file(name) or (self.analyze_headers and is_header_file(name)):
           filename = os.path.relpath(os.path.join(root, name))
           if filename.find(" ") > -1:
             filename = '"%s"' % filename
@@ -128,6 +131,7 @@ def usage():
   print("-clang             Use the 'Clang Python bindings' to parse the source files (default).")
   print("--no-parallel      Do not parallelize the compilation process (faster for small code bases).")
   print("--profile-export   Execute the command and show profiling data.")
+  print("--analyze-headers  Analyze also all the header files.")
   print("-test              Test for the availability of exporters")
   print("-help              Show this help.")
   print()
@@ -138,6 +142,7 @@ def main():
   project_file = DEFAULT_PROJECT_FILE
   next_project_name = False
   parallel = True
+  analyze_headers = False
 
   for arg in sys.argv[1:]:
     if next_project_name:
@@ -147,6 +152,7 @@ def main():
 
     if arg in ["-create", "-c"]:
       sbd_project = CSBDProject()
+      sbd_project.analyze_headers = analyze_headers
       if sbd_project.create_project(os.getcwd(), project_file):
         print("Project file %s created." % repr(project_file))
     elif arg == "-project":
@@ -166,6 +172,8 @@ def main():
       print("Has Clang Python Bindings: %s" % has_clang)
     elif arg in ["--no-parallel"]:
       parallel = False
+    elif arg in ["--analyze-headers"]:
+      analyze_headers = True
     elif arg in ["-help", "-h"]:
       usage()
     else:

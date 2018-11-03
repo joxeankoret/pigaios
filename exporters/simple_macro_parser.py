@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import decimal
 
 from SimpleEval import SimpleEval
 from kfuzzy import CKoretFuzzyHashing
@@ -62,7 +63,11 @@ class CMacroExtractor:
       enums[enum_name] = []
       tmp = []
       for element in l:
-        tmp.append("  %s = %s, " % (element, str(d[element])))
+        if type(d[element]) is decimal.Decimal:
+          value = "0x%08x" % long(d[element].to_eng_string())
+        else:
+          value = str(d[element])
+        tmp.append("  %s = %s, " % (element, value))
 
       tmp.sort()
       tmp.insert(0, "enum %s {" % enum_name)
