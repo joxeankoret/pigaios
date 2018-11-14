@@ -11,6 +11,14 @@ import sqlite3
 import numpy as np
 
 #-------------------------------------------------------------------------------
+# Hack for Python3 compat
+try:
+  INTEGER_TYPES = (int, long)
+except NameError:
+  long = int
+  INTEGER_TYPES = (int,)
+
+#-------------------------------------------------------------------------------
 _DEBUG = False
 
 #-------------------------------------------------------------------------------
@@ -135,7 +143,7 @@ class CPigaiosTrainer:
 
       if field == "switchs_json":
         ret[field] = int(row["src_%s" % field] == row["bin_%s" % field])
-      elif type(row["src_%s" % field]) in [int, long]:
+      elif type(row["src_%s" % field]) in INTEGER_TYPES:
         ret["src_%s" % field] = int(row["src_%s" % field])
         ret["bin_%s" % field] = int(row["bin_%s" % field])
         ret["%s_diff" % field] = abs(row["src_%s" % field] - row["bin_%s" % field])

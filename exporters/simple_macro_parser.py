@@ -63,9 +63,13 @@ class CMacroExtractor:
       enums[enum_name] = []
       tmp = []
       for element in l:
+        value = None
         if type(d[element]) is decimal.Decimal:
-          value = "0x%08x" % long(d[element].to_eng_string())
-        else:
+          eng_str = d[element].to_eng_string()
+          if str(eng_str).find(".") == -1:
+            value = "0x%08x" % long(eng_str)
+
+        if value is None:
           value = str(d[element])
         tmp.append("  %s = %s, " % (element, value))
 

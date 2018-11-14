@@ -483,7 +483,7 @@ class CClangExporter(CBaseExporter):
     return typedef_name, src
 
   def parse_enum(self, enum):
-    is_anon = enum.type.spelling.find("anonymous ") > -1
+    is_anon = enum.type.spelling.find("(anonymous ") > -1
     if not is_anon:
       enum_name = enum.type.spelling
     else:
@@ -572,6 +572,8 @@ class CClangExporter(CBaseExporter):
 
             if element.kind == CursorKind.STRUCT_DECL:
               struct_name, struct_src = self.get_field(element)
+              if not struct_src.startswith("struct "):
+                struct_src = "struct %s" % struct_src
               self.src_definitions.append(["struct", struct_name, struct_src])
             elif element.kind == CursorKind.ENUM_DECL:
               ret = self.get_field(element)

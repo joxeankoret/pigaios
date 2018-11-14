@@ -8,6 +8,8 @@ import time
 import difflib
 import sqlite3
 
+from others.py3compat import INTEGER_TYPES
+
 try:
   from sourcexp_ida import log
   from_ida = True
@@ -161,7 +163,7 @@ class CBinaryToSourceImporter:
 
       if field == "switchs_json":
         ret[field] = int(src_row[field] == bin_row[field])
-      elif type(src_row[field]) in [int, long]:
+      elif type(src_row[field]) in INTEGER_TYPES:
         ret["src_%s" % field] = int(src_row[field])
         ret["bin_%s" % field] = int(bin_row[field])
         ret[field] = abs(src_row[field] - bin_row[field])
@@ -248,7 +250,7 @@ class CBinaryToSourceImporter:
       if src_row[field] == bin_row[field] and field == "name":
         score += 3 * len(fields)
         reasons.append("Same function name")
-      elif type(src_row[field]) in [int, long]:
+      elif type(src_row[field]) in INTEGER_TYPES:
         if src_row[field] == bin_row[field]:
           score += 1.1
           non_zero_num_matches += int(src_row[field] != 0)
@@ -370,9 +372,12 @@ class CBinaryToSourceImporter:
     score *= HEURISTICS[heuristic]
 
     # ...and finally adjust the score.
-    score = min(score, 1.0)
     if ml > score and score < self.min_display_level:
       score += ml / ML_HEURISTICS[heuristic]
+    elif ml > score:
+      score += 0.3
+
+    score = min(score, 1.0)
 
     ret = score, reasons, ml
     self.compare_ratios[idx] = ret
@@ -453,10 +458,10 @@ class CBinaryToSourceImporter:
       # ratio we get from the initial best matches (which must be false positives
       # free).
       if self.min_level == 0.0:
-        self.min_level = min(abs(min_score - 0.3), 0.01)
+        self.min_level = min(abs(min_score - 0.2), 0.01)
 
       if self.min_display_level == 0.0:
-        self.min_display_level = max(abs(min_score - 0.3), 0.3)
+        self.min_display_level = max(abs(min_score - 0.2), 0.2)
 
     log("Minimum score for calculations: %f" % self.min_level)
     log("Minimum score to show results : %f" % self.min_display_level)
