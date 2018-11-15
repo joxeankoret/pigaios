@@ -246,9 +246,11 @@ class CBinaryToSourceImporter:
     # XXX:FIXME: Try to automatically build a decission tree here?
     score = 0
     non_zero_num_matches = 0
+    same_name = False
     for field in COMPARE_FIELDS:
       if src_row[field] == bin_row[field] and field == "name":
-        score += 3 * len(fields)
+        same_name = True
+        score += 4 * len(fields)
         reasons.append("Same function name")
       elif type(src_row[field]) in INTEGER_TYPES:
         if src_row[field] == bin_row[field]:
@@ -359,7 +361,7 @@ class CBinaryToSourceImporter:
 
     # If every numeric field matched equals to zero, it's most likely a false
     # positive due to a bug in an exporter that is exporting empty functions.
-    if len(vals) == 1 and vals.pop() == 0:
+    if len(vals) == 1 and vals.pop() == 0 and not same_name:
       score = 0.0
 
     # If we have too many numeric matches that are just zero, lower the given
