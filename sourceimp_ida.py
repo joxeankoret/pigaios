@@ -249,8 +249,7 @@ class CDiffChooser(Choose2):
         line.append(reason)
       self.items.append(line)
 
-    self.items = sorted(self.items, key=operator.itemgetter(5), reverse=True)
-    self.items = sorted(self.items, key=operator.itemgetter(6), reverse=True)
+    self.items = sorted(self.items, key= lambda x: (max(x[5], x[6], x[5]+x[6]),), reverse=True)
 
   def show(self):
     ret = self.Show(False)
@@ -276,7 +275,7 @@ class CDiffChooser(Choose2):
       if not line[4].startswith(line[2]):
         return [0x0000FF, 0]
 
-    ratio = float(line[5])
+    ratio = max(float(line[5]), float(line[7]))
     red = abs(int(164 * (1 - ratio)))
     green = abs(int(128 * ratio))
     blue = abs(int(255 * (1 - ratio)))
