@@ -91,6 +91,7 @@ def quick_ratio(buf1, buf2):
 
 #-------------------------------------------------------------------------------
 def seems_false_positive(src_name, bin_name):
+  bin_name = bin_name.strip("_").strip(".")
   if bin_name.startswith("sub_") or bin_name.startswith("j_") or \
      bin_name.startswith("unknown") or bin_name.startswith("nullsub_"):
     return False

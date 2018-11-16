@@ -269,10 +269,10 @@ class CDiffChooser(Choose2):
 
   def OnGetLineAttr(self, n):
     line = self.items[n]
-    bin_name = line[4]
+    bin_name = line[4].strip("_").strip(".")
     if not bin_name.startswith("sub_"):
-      src_name = line[2]
-      if not line[4].startswith(line[2]):
+      src_name = line[2].strip("_").strip(".")
+      if not bin_name.startswith(src_name):
         return [0x0000FF, 0]
 
     ratio = max(float(line[5]), float(line[7]))
