@@ -226,7 +226,7 @@ class CDiffChooser(Choose2):
   def __init__(self, differ, title, matches, importer_obj):
     self.importer = importer_obj
     self.differ = differ
-    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 4], ["ML", 4], ["AVG", 4], ["Heuristic", 25], ]
+    columns = [ ["Line", 4], ["Id", 4], ["Source Function", 20], ["Local Address", 14], ["Local Name", 14], ["Ratio", 4], ["ML", 4], ["AVG", 4], ["SR", 4], ["Heuristic", 25], ]
     if _DEBUG:
       self.columns.append(["FP?", 6])
       self.columns.append(["Reasons", 40])
@@ -240,9 +240,9 @@ class CDiffChooser(Choose2):
     self.selected_items = []
 
     for i, match in enumerate(matches):
-      ea, name, heuristic, score, reason, ml = matches[match]
+      ea, name, heuristic, score, reason, ml, qr = matches[match]
       bin_func_name = GetFunctionName(long(ea))
-      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), str(ml), str((score + ml)/2), heuristic, reason]
+      line = ["%03d" % i, "%05d" % match, name, "0x%08x" % long(ea), bin_func_name, str(score), str(ml), str((score + ml)/2), str(qr), heuristic, reason]
       if _DEBUG:
         maybe_false_positive = int(seems_false_positive(name, bin_func_name))
         line.append(str(maybe_false_positive))
@@ -272,7 +272,7 @@ class CDiffChooser(Choose2):
     bin_name = line[4].strip("_").strip(".")
     if not bin_name.startswith("sub_"):
       src_name = line[2].strip("_").strip(".")
-      if not bin_name.startswith(src_name):
+      if bin_name.find(src_name) == -1:
         return [0x0000FF, 0]
 
     ratio = max(float(line[5]), float(line[7]))
@@ -366,6 +366,7 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
   def __init__(self):
     CBinaryToSourceImporter.__init__(self, GetIdbPath())
     show_wait_box("Finding matches...")
+    self.src_db = None
 
   def different_versions(self):
     ret = False
@@ -386,9 +387,9 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     cur.close()
     return ret
 
-  def open_or_create_database(self):
+  def open_or_create_database(self, force=False):
     self.db_filename = os.path.splitext(self.db_path)[0] + "-src.sqlite"
-    if not os.path.exists(self.db_filename) or self.different_versions():
+    if not os.path.exists(self.db_filename) or self.different_versions() or force:
       if not from_ida:
         raise Exception("Export process can only be done from within IDA")
 
@@ -416,11 +417,6 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
       # Failed to decompile
       return False
 
-    cmts = idaapi.restore_user_cmts(cfunc.entry_ea)
-    if cmts is not None:
-      for tl, cmt in cmts.iteritems():
-        self.pseudo_comments[tl.ea - self.get_base_address()] = [str(cmt), tl.itp]
-
     sv = cfunc.get_pseudocode()
     self.pseudo[ea] = []
     first_line = None
@@ -435,12 +431,48 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
         self.pseudo[ea].append(line)
     return first_line
 
+  def decompile(self, ea):
+    if ea in self.pseudo:
+      return "\n".join(self.pseudo[ea])
+
+    decompiler_plugin = get_decompiler_plugin()
+    if not init_hexrays_plugin() and not (load_plugin(decompiler_plugin) and init_hexrays_plugin()):
+      return False
+
+    f = get_func(ea)
+    if f is None:
+      return False
+
+    try:
+      cfunc = decompile(f)
+    except:
+      Warning("Error decompiling function: %s" % str(sys.exc_info())[1])
+      return False
+
+    if cfunc is None:
+      # Failed to decompile
+      return False
+
+    sv = cfunc.get_pseudocode()
+    self.pseudo[ea] = []
+    for sline in sv:
+      line = tag_remove(sline.line)
+      if line.startswith("//"):
+        continue
+      self.pseudo[ea].append(line)
+    return "\n".join(self.pseudo[ea])
+
   def get_function_name(self, ea):
     return GetFunctionName(ea)
 
   def import_src(self, src_db):
+    self.src_db = src_db
     matches = False
-    self.db.execute('attach "%s" as src' % src_db)
+    try:
+      self.db.execute('attach "%s" as src' % src_db)
+    except:
+      pass
+
     if self.find_initial_rows():
       self.find_callgraph_matches()
       self.choose_best_matches(is_final = True)
@@ -476,6 +508,12 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
         proto = self.get_source_field_name(src_id, "prototype")
         if proto is not None:
           SetType(bin_ea, "%s;" % proto)
+
+    if len(import_items) >= 5:
+      log("Re-exporting database...")
+      self.open_or_create_database(force=True)
+      log("Re-diffing databases...")
+      self.import_src(self.src_db)
 
 #-------------------------------------------------------------------------------
 def main():
