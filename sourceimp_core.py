@@ -379,7 +379,7 @@ class CBinaryToSourceImporter:
     qr = 0.0
     ea = long(bin_row["ea"])
     decomp = self.decompile(ea)
-    if decomp is not None:
+    if decomp is not None and decomp != False:
       source_code = src_row["source"]
       qr = quick_ratio(decomp, source_code)
 
@@ -389,7 +389,7 @@ class CBinaryToSourceImporter:
     elif ml > score:
       score += 0.3
 
-    if len(self.pseudo[ea]) >= 4:
+    if ea in self.pseudo and len(self.pseudo[ea]) >= 4:
       reasons.append("Source codes similarity ratio %f" % qr)
       score += qr
 
@@ -502,6 +502,8 @@ class CBinaryToSourceImporter:
     # We have had too good matches or too few, use a more relaxed minimum score
     if min_score > 0.5:
       min_score = 0.5
+    elif min_score < 0:
+      min_score = 0
 
     # If the minimum ratios were set to '0', calculate them from the minimum
     # ratio we get from the initial best matches (which must be false positives

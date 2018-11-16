@@ -74,11 +74,12 @@ class CSrcDiffDialog(Form):
   <#Enter the command line for indenting sources and pseudo-codes (leave blank to ignore it) #Indent command     :{iIndentCommand}>
   <#Minimum ratio to consider a match good enough (set to zero to automatically calculate it)#Calculations ratio :{iMinLevel}>
   <#Minimum ratio for a match to be displayed (set to zero to automatically calculate it)    #Display ratio      :{iMinDisplayLevel}>
-"""
+   <Use the decompiler if available:{rUseDecompiler}>{cGroup1}>"""
     args = {'iFileOpen'       : Form.FileInput(open=True, swidth=45),
             'iIndentCommand'  : Form.StringInput(swidth=45),
             'iMinLevel'       : Form.StringInput(swidth=10),
-            'iMinDisplayLevel': Form.StringInput(swidth=10)
+            'iMinDisplayLevel': Form.StringInput(swidth=10),
+            'cGroup1'  : Form.ChkGroupControl(("rUseDecompiler",))
             }
     Form.__init__(self, s, args)
 
@@ -367,6 +368,7 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     CBinaryToSourceImporter.__init__(self, GetIdbPath())
     show_wait_box("Finding matches...")
     self.src_db = None
+    self.use_decompiler = False
 
   def different_versions(self):
     ret = False
@@ -432,6 +434,9 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     return first_line
 
   def decompile(self, ea):
+    if not self.use_decompiler:
+      return False
+
     if ea in self.pseudo:
       return "\n".join(self.pseudo[ea])
 
@@ -542,6 +547,7 @@ def main():
     importer = CIDABinaryToSourceImporter()
     importer.min_level = min_level
     importer.min_display_level = min_display_level
+    importer.use_decompiler = x.rUseDecompiler.checked
     importer.import_src(database)
   finally:
     hide_wait_box()
