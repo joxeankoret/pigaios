@@ -47,6 +47,7 @@ def indent_source(src):
       tmp = tmp.replace("<", "&lt;").replace(">", "&gt;")
       return tmp
   except:
+    log("Error indenting: %s" % (str(sys.exc_info()[1])))
     return src.replace("<", "&lt;").replace(">", "&gt;")
 
 #-----------------------------------------------------------------------
@@ -514,12 +515,6 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
         if proto is not None:
           SetType(bin_ea, "%s;" % proto)
 
-    if len(import_items) >= 5:
-      log("Re-exporting database...")
-      self.open_or_create_database(force=True)
-      log("Re-diffing databases...")
-      self.import_src(self.src_db)
-
 #-------------------------------------------------------------------------------
 def main():
   global indent_cmd
@@ -541,7 +536,7 @@ def main():
     min_display_level = float(x.iMinDisplayLevel.value)
     reg_write_string("PIGAIOS", x.iIndentCommand.value, "indent-cmd")
     lexer = shlex.shlex(x.iIndentCommand.value)
-    lexer.wordchars += "-"
+    lexer.wordchars += "\:-."
     indent_cmd = list(lexer)
 
     importer = CIDABinaryToSourceImporter()

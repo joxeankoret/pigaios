@@ -312,7 +312,7 @@ class CBinaryToSourceImporter:
             per_match_score = 20.
             per_miss_score = 1.0
             if field == "callees_json":
-              per_match_score = 5.
+              per_match_score = 8.
               per_miss_score = 2.
             sub_score = (len(subset) * per_match_score) - (max_size + len(subset)) * per_miss_score
             reasons.append("Similar JSON %s (%s)" % (field, str(subset)))

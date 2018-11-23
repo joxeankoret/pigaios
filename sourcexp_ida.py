@@ -172,6 +172,7 @@ class CBinaryToSourceExporter:
 
     if os.path.exists(sqlite_db):
       log("Removing previous database...")
+      self.db.close()
       os.remove(sqlite_db)
 
     log("Exporting database %s" % sqlite_db)
