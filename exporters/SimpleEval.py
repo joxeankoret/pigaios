@@ -25,6 +25,17 @@ import string
 
 from decimal import Decimal
 
+try:
+  long        # Python 2
+except NameError:
+  long = int  # Python 3
+
+try:
+  raw_input          # Python 2
+except NameError:
+  raw_input = input  # Python 3
+
+
 #-------------------------------------------------------------------------------
 __version__ = '1.0'
 __all__ = [

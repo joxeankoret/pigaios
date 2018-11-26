@@ -86,7 +86,7 @@ def constant_filter(value):
     return False
 
   #no single bits sets - mostly defines / flags
-  for i in xrange(64):
+  for i in range(64):
     if value == (1 << i):
       return False
 
@@ -681,4 +681,3 @@ class CBaseExporter(object):
 
   def export_one(self, filename, args, is_c):
     raise Exception("Not implemented in the inherited class")
-
