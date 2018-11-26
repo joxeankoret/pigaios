@@ -18,6 +18,7 @@ You should have received a copy of the GNU Lesser General Public
 License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
+from __future__ import print_function
 
 import os
 import sys
@@ -36,6 +37,12 @@ try:
     psyco.full()
 except ImportError:
     pass
+
+try:
+  xrange          # Python 2
+except NameError:
+  xrange = range  # Python 3
+
 
 class CFileStr(str):
     fd = None
@@ -269,13 +276,13 @@ class CKoretFuzzyHashing:
         return hash1 + ";" + hash2 + ";" + hash3
 
     def hash_file(self, filename, aggresive = False):
-        f = file(filename, "rb")
+        f = open(filename, "rb")
         f.seek(0, 2)
         size = f.tell()
         
         if size > self.big_file_size:
-            print
-            print "Warning! Support for big files (%d MB > %d MB) is broken!" % (size/1024/1024, self.big_file_size / 1024 / 1024)
+            print()
+            print("Warning! Support for big files (%d MB > %d MB) is broken!" % (size/1024/1024, self.big_file_size / 1024 / 1024))
             fbytes = CFileStr(f)
         else:
             f.seek(0)
@@ -331,27 +338,27 @@ class ksha(kdha):
         self._kfd.algorithm = self._kfd.simplified
 
 def usage():
-    print "Usage:", sys.argv[0], "<filename>"
+    print("Usage:", sys.argv[0], "<filename>")
 
 def main(path):
     hash = CKoretFuzzyHashing()
     #hash.algorithm = hash._fast_hash
     
     if os.path.isdir(path):
-        print "Signature;Simple Signature;Reverse Signature;Filename"
+        print("Signature;Simple Signature;Reverse Signature;Filename")
         for root, dirs, files in os.walk(path):
             for name in files:
                 tmp = os.path.join(root, name)
                 try:
                     ret = hash.hash_file(tmp, True)
-                    print "%s;%s" % (ret, tmp)
+                    print("%s;%s" % (ret, tmp))
                 except:
-                    print "***ERROR with file %s" % tmp
-                    print sys.exc_info()[1]
+                    print("***ERROR with file %s" % tmp)
+                    print(sys.exc_info()[1])
     else:
         hash = CKoretFuzzyHashing()
         ret = hash.hash_file(path, True)
-        print "%s;%s" % (path, ret)
+        print("%s;%s" % (path, ret))
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

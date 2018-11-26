@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import os
 import re
 import sys
@@ -7,6 +8,11 @@ import decimal
 
 from SimpleEval import SimpleEval
 from kfuzzy import CKoretFuzzyHashing
+
+try:
+  long        # Python 2
+except NameError:
+  long = int  # Python 3
 
 #-------------------------------------------------------------------------------
 MACROS_REGEXP = '\W*#\W*define\W+([a-z0-9_]+)\W+([a-z0-9_]+)'
@@ -104,7 +110,7 @@ class CMacroExtractor:
 
 #-------------------------------------------------------------------------------
 def usage():
-  print "Usage: %s <source file>" % sys.argv[0]
+  print("Usage: %s <source file>" % sys.argv[0])
 
 #-------------------------------------------------------------------------------
 def main(filename):
@@ -112,8 +118,8 @@ def main(filename):
   enums = extractor.extract(filename)
   for name in enums:
     src = enums[name]
-    print src
-    print
+    print(src)
+    print()
 
 if __name__ == "__main__":
   if len(sys.argv) == 1:
