@@ -18,6 +18,17 @@ SCAN_ELEMENTS = [CursorKind.FUNCTION_DECL, CursorKind.FUNCTION_TEMPLATE,
                  CursorKind.CXX_METHOD, CursorKind.CONSTRUCTOR,
                  CursorKind.DESTRUCTOR, CursorKind.OBJC_INSTANCE_METHOD_DECL]
 
+#-----------------------------------------------------------------------------
+def basename(path):
+  pos1 = path[::-1].find("\\")
+  pos2 = path[::-1].find("/")
+
+  if pos1 == -1: pos1 = len(path)
+  if pos2 == -1: pos2 = len(path)
+  pos = min(pos1, pos2)
+
+  return path[len(path)-pos:]
+
 #-------------------------------------------------------------------------------
 def severity2text(severity):
   if severity == Diagnostic.Ignored:
@@ -616,18 +627,18 @@ class CClangExporter(CBaseExporter):
                                  constants, constants_json, loops, switchs,
                                  switchs_json, calls, externals, filename,
                                  callees_json, source, recursive, indirect, globals,
-                                 inlined, static)
+                                 inlined, static, basename)
                                values
                                  ((select count(ea)+1 from functions),
                                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                                  ?, ?, ?, ?, ?)"""
+                                  ?, ?, ?, ?, ?, ?)"""
           args = (obj.name, prototype, prototype2, obj.conditions,
                   len(obj.constants), json_dump(list(obj.constants)),
                   obj.loops, len(obj.switches), json_dump(list(obj.switches)),
                   len(obj.calls.keys()), len(obj.externals),
                   filename, json_dump(obj.calls), source, obj.recursive,
                   len(obj.indirects), len(obj.globals_uses), obj.is_inlined,
-                  obj.is_static, )
+                  obj.is_static, basename(filename).lower(), )
           self.insert_row(sql, args, cur)
 
       self.header_files += list(dones)

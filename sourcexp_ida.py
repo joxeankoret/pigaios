@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import re
 import os
 import sys
 import json
@@ -15,7 +16,7 @@ from idautils import *
 from others.tarjan_sort import strongly_connected_components
 
 #-------------------------------------------------------------------------------
-VERSION_VALUE = "Pigaios IDA Exporter 1.2"
+VERSION_VALUE = "Pigaios IDA Exporter 1.3.0"
 
 #-------------------------------------------------------------------------------
 BANNED_FUNCTIONS = ['__asprintf_chk',
@@ -87,9 +88,63 @@ BANNED_FUNCTIONS = ['__asprintf_chk',
  '__wmemcpy_chk',
  '__wprintf_chk']
 
+#-----------------------------------------------------------------------------
+SOURCE_FILES_REGEXP = r"([a-z_\/\\][a-z0-9_/\\:\-\.@]+\.(c|cc|cxx|c\+\+|cpp|h|hpp|m|rs|go|ml))($|:| )"
+
+LANGS = {}
+LANGS["C/C++"] = ["c", "cc", "cxx", "cpp", "h", "hpp"]
+LANGS["C"] = ["c"]
+LANGS["C++"] = ["cc", "cxx", "cpp", "hpp", "c++"]
+LANGS["Obj-C"] = ["m"]
+LANGS["Rust"] = ["rs"]
+LANGS["Golang"] = ["go"]
+LANGS["OCaml"] = ["ml"]
+
 #-------------------------------------------------------------------------------
 def log(msg):
   Message("[%s] %s\n" % (time.asctime(), msg))
+
+#-----------------------------------------------------------------------------
+def basename(path):
+  pos1 = path[::-1].find("\\")
+  pos2 = path[::-1].find("/")
+
+  if pos1 == -1: pos1 = len(path)
+  if pos2 == -1: pos2 = len(path)
+  pos = min(pos1, pos2)
+
+  return path[len(path)-pos:]
+
+#-----------------------------------------------------------------------------
+def get_source_strings(min_len = 4, strtypes = [0, 1]):
+  strings = Strings()
+  strings.setup(strtypes = strtypes)
+
+  src_langs = {}
+  total_files = 0
+  d = {}
+  for s in strings:
+    if s and s.length > min_len:
+      ret = re.findall(SOURCE_FILES_REGEXP, str(s), re.IGNORECASE)
+      if ret and len(ret) > 0:
+        refs = list(DataRefsTo(s.ea))
+        if len(refs) > 0:
+          total_files += 1
+          full_path    = ret[0][0]
+          d[full_path] = []
+          _, file_ext  = os.path.splitext(full_path.lower())
+          file_ext = file_ext.strip(".")
+          for key in LANGS:
+            if file_ext in LANGS[key]:
+              try:
+                src_langs[key] += 1
+              except KeyError:
+                src_langs[key] = 1
+
+          for ref in refs:
+            d[full_path].append([ref, GetFunctionName(ref), str(s)])
+
+  return d, src_langs, total_files
 
 #-------------------------------------------------------------------------------
 # Compatibility between IDA 6.X and 7.X
@@ -172,7 +227,8 @@ class CBinaryToSourceExporter:
 
     if os.path.exists(sqlite_db):
       log("Removing previous database...")
-      self.db.close()
+      if self.db is not None:
+        self.db.close()
       os.remove(sqlite_db)
 
     log("Exporting database %s" % sqlite_db)
@@ -216,6 +272,13 @@ class CBinaryToSourceExporter:
                           id integer not null primary key,
                           func_id integer not null references functions(id) on delete cascade,
                           constant text not null)"""
+    cur.execute(sql)
+
+    sql = """create table if not exists source_files(
+                          id integer not null primary key,
+                          full_path text,
+                          source_file text,
+                          ea text)"""
     cur.execute(sql)
 
     sql = """ create unique index idx_callgraph on callgraph (caller, callee) """
@@ -434,11 +497,24 @@ class CBinaryToSourceExporter:
 
     cur.close()
 
+  def save_source_files(self, d):
+    cur = self.db.cursor()
+    sql = """ insert into source_files (full_path, source_file, ea)
+                                values (?, ?, ?)"""
+    for full_path in d:
+      source_file = basename(full_path).lower()
+      for ea, func_name, str_data in d[full_path]:
+        func = get_func(ea)
+        if func:
+          cur.execute(sql, (full_path, source_file, str(func.startEA),))
+    cur.close()
+
   def export(self, filename=None):
     self.create_database(filename)
 
     self.db.execute("PRAGMA synchronous = OFF")
     self.db.execute("BEGIN")
+
     try:
       show_wait_box("Exporting database...")
       i = 0
@@ -463,10 +539,21 @@ class CBinaryToSourceExporter:
     finally:
       hide_wait_box()
 
+    d, src_langs, total_files = get_source_strings()
+    if len(d) > 0:
+      for key in src_langs:
+        log("Found programming language %s -> %f%%" % (key.ljust(10), src_langs[key] * 100. / total_files))
+
+    log("Finding source files...")
+    self.save_source_files(d)
+
     sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
     self.db.execute(sql)
 
     sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
+    self.db.execute(sql)
+
+    sql = "create index if not exists idx_source_file on source_files (source_file)"
     self.db.execute(sql)
 
     self.db.execute("COMMIT")

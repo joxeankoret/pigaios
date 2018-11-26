@@ -23,7 +23,7 @@ except:
   has_colorama = False
 
 #-------------------------------------------------------------------------------
-VERSION_VALUE = "Pigaios Source Exporter 1.0"
+VERSION_VALUE = "Pigaios Source Exporter 1.1"
 
 #-------------------------------------------------------------------------------
 CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".c++", ".cp", ".m"]
@@ -164,6 +164,10 @@ def all_combinations(items):
       yield combo
 
 #-------------------------------------------------------------------------------
+def json_loads(line):
+  return json.loads(line.decode("utf-8","ignore"))
+
+#-------------------------------------------------------------------------------
 def _pickle_method(method):
   func_name = method.im_func.__name__
   obj = method.im_self
@@ -231,6 +235,7 @@ class CBaseExporter(object):
                           ea text,
                           name text,
                           filename text,
+                          basename text,
                           prototype text,
                           prototype2 text,
                           conditions integer,
@@ -386,7 +391,7 @@ class CBaseExporter(object):
     cur.execute(sql)
     for row in list(cur.fetchall()):
       func_id = row[0]
-      callees = json.loads(row[2])
+      callees = json_loads(row[2])
       for callee in callees:
         if callee == "":
           continue
@@ -416,6 +421,9 @@ class CBaseExporter(object):
     sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
     cur.execute(sql)
 
+    sql = "create index if not exists idx_functions_03 on functions (basename)"
+    cur.execute(sql)
+
   def get_function_data(self, func, cur=None):
     close = False
     if cur is None:
@@ -434,8 +442,8 @@ class CBaseExporter(object):
     return row
 
   def mix_json(self, j1, j2):
-    ret1 = json.loads(j1)
-    ret2 = json.loads(j2)
+    ret1 = json_loads(j1)
+    ret2 = json_loads(j2)
     for x in ret2:
       if x not in ret1:
         ret1.append(x)
@@ -449,13 +457,13 @@ class CBaseExporter(object):
                constants, constants_json, loops, switchs,
                switchs_json, calls, externals, filename,
                callees, source, recursive, indirect, globals,
-               inlined, static)
+               inlined, static, basename)
              select (select count(ea)+1 from functions),
                name || '_with_inlines', prototype, prototype2, conditions,
                constants, constants_json, loops, switchs,
                switchs_json, calls, externals, filename,
                callees, source, recursive, indirect, globals,
-               inlined, static
+               inlined, static, basename
                from functions
               where id = ?"""
 
@@ -566,7 +574,7 @@ class CBaseExporter(object):
     
     insert_sql = "insert into constants (func_id, constant) values (?, ?)"
     for row in rows:
-      constants = json.loads(row[1])
+      constants = json_loads(row[1])
       for constant in constants:
         if len(constant) > 4:
           cur.execute(insert_sql, (row[0], constant))

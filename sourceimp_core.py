@@ -60,11 +60,13 @@ SAME_RARE_CONSTANT = 1
 NEARBY_FUNCTION = 2
 CALLGRAPH_MATCH = 3
 SPECIFIC_CALLEE_SEARCH = 4
+SAME_SOURCE_FILE = 5
 
 # All heuristics are equal, but some are more equal than others.
 HEURISTICS = {
   ATTRIBUTES_MATCHING     : 1.0,
   SAME_RARE_CONSTANT      : 1.0,
+  SAME_SOURCE_FILE        : 1.0,
   NEARBY_FUNCTION         : 0.8,
   CALLGRAPH_MATCH         : 0.7,
   SPECIFIC_CALLEE_SEARCH  : 0.7,
@@ -73,6 +75,7 @@ HEURISTICS = {
 ML_HEURISTICS = {
   ATTRIBUTES_MATCHING     :1.,
   SAME_RARE_CONSTANT      :2.,
+  SAME_SOURCE_FILE        :2.,
   NEARBY_FUNCTION         :4.,
   CALLGRAPH_MATCH         :9,
   SPECIFIC_CALLEE_SEARCH  :5.
@@ -247,7 +250,7 @@ class CBinaryToSourceImporter:
 
     vals = set()
     reasons = []
-    # XXX:FIXME: Try to automatically build a decission tree here?
+
     score = 0
     non_zero_num_matches = 0
     same_name = False
@@ -497,6 +500,34 @@ class CBinaryToSourceImporter:
       if score > max_score:
         max_score = score
 
+    log("Finding same source files...")
+    sql = """ select bin.ea, src.name, src.id, bin.id, bin.name
+                from (select f.id, f.ea, s.source_file source_file, f.name
+                  from functions f,
+                       source_files s
+                 where f.ea = s.ea) bin,
+                src.functions src
+               where src.basename = bin.source_file"""
+    cur.execute(sql)
+    while 1:
+      row = cur.fetchone()
+      if not row:
+        break
+
+      size += 1
+      func_ea = long(row[0])
+      match_name = row[1]
+      match_id = row[2]
+      bin_id = row[3]
+      score, reasons, ml, qr = self.compare_functions(match_id, bin_id, SAME_SOURCE_FILE)
+      if score >= 0.3 or ml == 1.0:
+        self.add_match(match_id, func_ea, match_name, "Same source file", score,
+                       reasons, ml, qr)
+
+      if score < min_score:
+        min_score = score
+      if score > max_score:
+        max_score = score
 
     log("Minimum score %f, maximum score %f" % (min_score, max_score))
     # We have had too good matches or too few, use a more relaxed minimum score
@@ -763,7 +794,7 @@ class CBinaryToSourceImporter:
             self.find_one_callgraph_match(match_id, ea, self.min_level, "caller", i)
 
           # More than 5 minutes for a single iteration is too long...
-          if time.time() - t >= 60 * 5:
+          if time.time() - t >= 60 * 10:
             log("Iteration took too long, continuing...")
             break
 
