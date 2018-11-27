@@ -1,6 +1,8 @@
-#!/usr/bin/python
+#!/usr/bin/env python2.7
 
-"""A simple C expressions evaluator.
+"""
+A simple C expressions evaluator.
+Copyright (c) 2018, Joxean Koret
 
 It was created as a safe eval() replacement that supports basic C expressions
 like the following ones:
@@ -14,6 +16,21 @@ like the following ones:
 
 BUGS: It supports decimal, octal and hexadecimal numbers. However, only integers
 and floats can be negatives.
+
+License:
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from __future__ import print_function

@@ -1,8 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.7
 
 """
-Fuzzy hashing algorithms
-Copyright (C) 2009, Joxean Koret
+Fuzzy hashing algorithms invented and implemented by Joxean Koret
+Copyright (C) 2009-2018, Joxean Koret
 
 This library is free software; you can redistribute it and/or
 modify it under the terms of the GNU Lesser General Public
