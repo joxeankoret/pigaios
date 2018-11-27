@@ -1,8 +1,8 @@
 #!/usr/bin/env python2.7
 
 """
-A decision tree based system for calculating matches ratios.
-Part of the Pigaios Project.
+A machine learning based system for calculating matches ratios. Part of the
+Pigaios Project.
 
 Copyright (c) 2018, Joxean Koret
 
