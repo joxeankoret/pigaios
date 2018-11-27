@@ -29,6 +29,11 @@ import sqlite3
 from others.py3compat import INTEGER_TYPES
 
 try:
+  reload           # Python 2
+except NameError:  # Python 3
+  from importlib import reload
+
+try:
   from sourcexp_ida import log
   from_ida = True
 except ImportError:
@@ -45,6 +50,11 @@ try:
   has_ml = True
 except ImportError:
   has_ml = False
+
+try:
+  long        # Python 2
+except NameError:
+  long = int  # Python 3
 
 #-----------------------------------------------------------------------
 def sourceimp_log(msg):
@@ -869,4 +879,3 @@ class CBinaryToSourceImporter:
       if tmp_id != src_id:
         if _DEBUG: self.dubious_matches[src_id] = self.best_matches[src_id]
         del self.best_matches[src_id]
-

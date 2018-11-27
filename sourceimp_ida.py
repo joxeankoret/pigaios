@@ -37,6 +37,12 @@ from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
                     reg_write_string)
 
 import sourceimp_core
+
+try:
+  reload           # Python 2
+except NameError:  # Python 3
+  from importlib import reload
+
 reload(sourceimp_core)
 
 from sourceimp_core import *
@@ -583,4 +589,3 @@ if __name__ == "__main__":
       raise
   finally:
     hide_wait_box()
-

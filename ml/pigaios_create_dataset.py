@@ -10,13 +10,11 @@ import time
 import sqlite3
 import numpy as np
 
-#-------------------------------------------------------------------------------
-# Hack for Python3 compat
 try:
-  INTEGER_TYPES = (int, long)
+  long        # Python 2
 except NameError:
-  long = int
-  INTEGER_TYPES = (int,)
+  long = int  # Python 3
+
 
 #-------------------------------------------------------------------------------
 _DEBUG = False
@@ -143,7 +141,7 @@ class CPigaiosTrainer:
 
       if field == "switchs_json":
         ret[field] = int(row["src_%s" % field] == row["bin_%s" % field])
-      elif type(row["src_%s" % field]) in INTEGER_TYPES:
+      elif type(row["src_%s" % field]) in (int, long):
         ret["src_%s" % field] = int(row["src_%s" % field])
         ret["bin_%s" % field] = int(row["bin_%s" % field])
         ret["%s_diff" % field] = abs(row["src_%s" % field] - row["bin_%s" % field])
@@ -243,4 +241,3 @@ if __name__ == "__main__":
     main(sys.argv[1], sys.argv[2], sys.argv[3])
   else:
     usage()
-
