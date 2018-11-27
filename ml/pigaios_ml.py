@@ -45,11 +45,6 @@ import threading
 import numpy as np
 np.warnings.filterwarnings('ignore')
 
-try:
-  import matplotlib.pyplot as plt
-except:
-  pass
-
 from sklearn import tree
 from sklearn import ensemble
 from sklearn import neighbors
@@ -83,8 +78,8 @@ def log(msg):
 
 #-------------------------------------------------------------------------------
 # The original VotingClassifier class uses np.bincount() with an array and
-# annoyingly it will fail with a message like "cannot cast float64 to int64".-
-# The following code uses 
+# annoyingly it will fail with a message like "cannot cast float64 to int64".
+#
 class CPigaiosVotingClassifier(ensemble.VotingClassifier):
   def predict(self, X):
     """ Predict class labels for X.
@@ -117,12 +112,12 @@ class CPigaiosVotingClassifier(ensemble.VotingClassifier):
 
 #-------------------------------------------------------------------------------
 class CPigaiosMultiClassifier(object):
-  def __init__(self, random_state = None):
+  def __init__(self, random_state=None):
     self.clfs = {}
     for classifier, name, arg in ML_CLASSIFIERS:
       has_seed = 'random_state' in dir(classifier.__init__.im_class())
       if has_seed:
-        self.clfs[name] = classifier(arg, random_state = random_state)
+        self.clfs[name] = classifier(arg, random_state=random_state)
       else:
         self.clfs[name] = classifier(arg)
 
@@ -178,8 +173,8 @@ class CPigaiosClassifier:
       next(reader, None)
       for row in reader:
         is_match = row[2]
-        x_values.append( map(float, row[3:]) )
-        y_values.append( [float(is_match)] )
+        x_values.append(map(float, row[3:]))
+        y_values.append([float(is_match)])
 
     return np.array(x_values), np.array(y_values)
 
@@ -212,7 +207,9 @@ class CPigaiosClassifier:
         ones_bad += 1
 
     line = "Correctly predicted %d out of %d (false negatives %d -> %f%%, false positives %d -> %f%%)"
-    log(line % (ones, ones + ones_bad, ones_bad, (ones_bad * 100. / (ones + ones_bad)), zeros_bad, ((zeros_bad * 100. / (zeros + zeros_bad)))))
+    log(line % (ones, ones + ones_bad, ones_bad, \
+       (ones_bad * 100. / (ones + ones_bad)), zeros_bad, \
+       ((zeros_bad * 100. / (zeros + zeros_bad)))))
     log("Total right matches %d -> %f%%" % (total_matches, (total_matches * 100. / len(X))))
 
   def load_model(self):
@@ -274,7 +271,9 @@ class CPigaiosClassifier:
       log("Loading model...")
       self.clf = joblib.load("clf.pkl")
 
-    dot_data = tree.export_graphviz(self.clf, out_file="pigaios.dot", filled=True, rounded=True, special_characters=True)
+    dot_data = tree.export_graphviz(self.clf, out_file="pigaios.dot", \
+                                    filled=True, rounded=True, \
+                                    special_characters=True)
     os.system("dot -Tx11 pigaios.dot")
 
 #-------------------------------------------------------------------------------
@@ -376,8 +375,6 @@ def main(args):
       pdt.criterion = "gini"
     elif arg in ["-entropy", "--criterion-entropy"]:
       pdt.criterion = "entropy"
-    elif arg in ["--plot"]:
-      pdt.plot()
     else:
       usage()
 
