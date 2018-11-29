@@ -29,7 +29,7 @@ $ pip install colorama
 $ pip install scikit-learn
 ```
 
-In Windows, it's also required to install LLVM. You can use the pre-built binaries: http://releases.llvm.org/download.html
+In Windows, it's also required to install LLVM *and* to add LLVM to the system PATH for all users or at least the current user. You can use the pre-built binaries: http://releases.llvm.org/download.html
 
 NOTE: There is no strong requirement on the specific 5.0 version of the Python CLang bindings, it should work with any CLang version higher or equal to 3.9. However, most of the testing have been done with version 5.0.
 
