@@ -1,6 +1,6 @@
 # Dataset
 
-The following is a dataset created with the good matches discovered between ZLib 1.2.11 & 1.2.5, Curl, Lua, Busybox, GMP, the whole coreutils and SQLite.
+The following is a dataset created with the good matches discovered between ZLib 1.2.11, Libxml2, Curl, Busybox, GMP, the whole coreutils and SQLite.
 It contains all the positives found between the source code and the binaries as well as a random selection of 1,000,000 negative results, created with the following easy SQLite3 command line tool script:
 
 ```
