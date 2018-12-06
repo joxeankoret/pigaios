@@ -81,7 +81,8 @@ ML_FIELDS_ORDER = ['bin_calls', 'bin_conditions', 'bin_externals',
   'constants_json_non_matched', 'constants_json_src_total', 'externals_diff',
   'globals_diff', 'heuristic', 'loops_diff', 'recursive_diff', 'src_calls',
   'src_conditions', 'src_externals', 'src_globals', 'src_loops',
-  'src_recursive', 'src_switchs', 'switchs_diff', 'switchs_json']
+  'src_recursive', 'src_switchs', 'switchs_diff', 'switchs_json',
+  'guessed_name', 'name_in_guesses', 'name_maybe_in_guesses']
 
 #-------------------------------------------------------------------------------
 ATTRIBUTES_MATCHING = 0
@@ -195,7 +196,7 @@ class CBinaryToSourceImporter:
 
     fields = COMPARE_FIELDS
     cur = self.db.cursor()
-    sql = "select %s from functions where id = ?" % ",".join(fields)
+    sql = "select guessed_name, all_guessed_names, %s from functions where id = ?" % ",".join(fields)
     cur_execute(cur, sql, (bin_id,))
     bin_row = cur.fetchone()
 
@@ -209,9 +210,16 @@ class CBinaryToSourceImporter:
 
     for field in COMPARE_FIELDS:
       if field == "name":
-        continue
-
-      if field == "switchs_json":
+        ret["guessed_name"] = bin_row["guessed_name"] == src_row["name"]
+        ret["name_in_guesses"] = 0
+        ret["name_maybe_in_guesses"] = 0
+        if bin_row["all_guessed_names"] is not None:
+          for guess in json_loads(bin_row["all_guessed_names"]):
+            if guess == src_row["name"]:
+              ret["function_name_in_guesses"] = 1
+            elif guess.find(src_row["name"]) > -1:
+              ret["function_name_maybe_in_guesses"] = 1
+      elif field == "switchs_json":
         ret[field] = int(src_row[field] == bin_row[field])
       elif type(src_row[field]) in INTEGER_TYPES:
         ret["src_%s" % field] = int(src_row[field])

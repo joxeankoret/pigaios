@@ -113,6 +113,10 @@ def debug(msg):
     log(msg)
 
 #-------------------------------------------------------------------------------
+def json_loads(line):
+  return json.loads(line.decode("utf-8","ignore"))
+
+#-------------------------------------------------------------------------------
 class CPigaiosTrainer:
   def __init__(self):
     self.db = None
@@ -137,17 +141,24 @@ class CPigaiosTrainer:
       if field == "name":
         func_name = row["bin_name"].strip(".")
         ret["accurate"] = int(row["src_%s" % field] == func_name)
-        continue
-
-      if field == "switchs_json":
+        ret["guessed_name"] = row["guessed_name"] == row["src_name"]
+        ret["name_in_guesses"] = 0
+        ret["name_maybe_in_guesses"] = 0
+        if row["all_guessed_names"] is not None:
+          for guess in json_loads(row["all_guessed_names"]):
+            if guess == row["src_name"]:
+              ret["function_name_in_guesses"] = 1
+            elif guess.find(row["src_name"]) > -1:
+              ret["function_name_maybe_in_guesses"] = 1
+      elif field == "switchs_json":
         ret[field] = int(row["src_%s" % field] == row["bin_%s" % field])
       elif type(row["src_%s" % field]) in (int, long):
         ret["src_%s" % field] = int(row["src_%s" % field])
         ret["bin_%s" % field] = int(row["bin_%s" % field])
         ret["%s_diff" % field] = abs(row["src_%s" % field] - row["bin_%s" % field])
       elif field.endswith("_json"):
-        src_json = json.loads(row["src_%s" % field])
-        bin_json = json.loads(row["bin_%s" % field])
+        src_json = json_loads(row["src_%s" % field])
+        bin_json = json_loads(row["bin_%s" % field])
 
         src_total = len(src_json)
         bin_total = len(bin_json)
@@ -183,7 +194,7 @@ class CPigaiosTrainer:
         buf.append("%s.%s %s_%s" % (prefix, field, prefix, field))
 
     cur = self.db.cursor()
-    sql = """select bin.id bin_id,
+    sql = """select bin.id bin_id, bin.guessed_name, bin.all_guessed_names,
                     src.id src_id,
                     %s
                from functions     bin,
