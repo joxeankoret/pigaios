@@ -22,6 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import re
 import os
 import sys
+import imp
 import time
 import shlex
 import difflib
@@ -30,6 +31,10 @@ import operator
 import traceback
 
 from subprocess import Popen, PIPE, STDOUT
+
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import NasmLexer, CppLexer
 
 from idaapi import (Choose2, PluginForm, Form, init_hexrays_plugin, load_plugin,
                     get_func, decompile, tag_remove, show_wait_box, info,
@@ -100,13 +105,17 @@ class CSrcDiffDialog(Form):
   <#Enter the command line for indenting sources and pseudo-codes (leave blank to ignore it) #Indent command     :{iIndentCommand}>
   <#Minimum ratio to consider a match good enough (set to zero to automatically calculate it)#Calculations ratio :{iMinLevel}>
   <#Minimum ratio for a match to be displayed (set to zero to automatically calculate it)    #Display ratio      :{iMinDisplayLevel}>
-   <Use the decompiler if available:{rUseDecompiler}>{cGroup1}>"""
-    args = {'iFileOpen'       : Form.FileInput(open=True, swidth=45),
-            'iIndentCommand'  : Form.StringInput(swidth=45),
-            'iMinLevel'       : Form.StringInput(swidth=10),
-            'iMinDisplayLevel': Form.StringInput(swidth=10),
-            'cGroup1'  : Form.ChkGroupControl(("rUseDecompiler",))
-            }
+<Use the decompiler if available for heuristical comparisons (slow):{rUseDecompiler}>{cGroup1}>
+
+  Project Specific Rules
+  <#Select the project specific Python script rules #Python script      :{iProjectSpecificRules}>
+  """
+    args = {'iFileOpen'             : Form.FileInput(open=True, swidth=45),
+            'iProjectSpecificRules' : Form.FileInput(open=True, swidth=45),
+            'iIndentCommand'        : Form.StringInput(swidth=45),
+            'iMinLevel'             : Form.StringInput(swidth=10),
+            'iMinDisplayLevel'      : Form.StringInput(swidth=10),
+            'cGroup1'  : Form.ChkGroupControl(("rUseDecompiler",)),}
     Form.__init__(self, s, args)
 
 #-------------------------------------------------------------------------------
@@ -276,7 +285,7 @@ class CDiffChooser(Choose2):
         line.append(reason)
       self.items.append(line)
 
-    self.items = sorted(self.items, key= lambda x: (max(x[5], x[6], x[5]+x[6]),), reverse=True)
+    self.items = sorted(self.items, key= lambda x: x[5], reverse=True)
 
   def show(self):
     ret = self.Show(False)
@@ -291,6 +300,7 @@ class CDiffChooser(Choose2):
       self.cmd_diff_c = self.AddCommand("Diff pseudo-code")
 
     self.cmd_show_reasons = self.AddCommand("Show match reasons")
+    self.cmd_show_source  = self.AddCommand("Show source code of function")
     self.cmd_import_all = self.AddCommand("Import all functions")
     self.cmd_import_selected = self.AddCommand("Import selected functions")
 
@@ -339,6 +349,23 @@ class CDiffChooser(Choose2):
       reasons = match[len(match)-1]
       msg = "\n".join(reasons)
       info(msg)
+    elif cmd_id == self.cmd_show_source:
+      item = self.items[n]
+      src_id = int(item[1])
+      cur = self.importer.db.cursor()
+      sql = "select source from src.functions where id = ?"
+      cur.execute(sql, (src_id,))
+      row = cur.fetchone()
+      if row is not None:
+        fmt = HtmlFormatter()
+        fmt.noclasses = True
+        fmt.linenos = True
+        func = row["source"]
+        src = highlight(func, CppLexer(), fmt)
+        title = "Source code of %s" % repr(item[2])
+        cdiffer = CHtmlViewer()
+        cdiffer.Show(src, title)
+      cur.close()
     elif cmd_id == self.cmd_import_all:
       if askyn_c(0, "HIDECANCEL\nDo you really want to import all matched functions as well as struct, union, enum and typedef definitions?") == 1:
         import_items = []
@@ -390,27 +417,69 @@ class CDiffChooser(Choose2):
 
 #-------------------------------------------------------------------------------
 class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
-  def __init__(self):
+  def __init__(self, project_script):
+    self.hooks = None
+    self.project_script = project_script
     CBinaryToSourceImporter.__init__(self, GetIdbPath())
+
     show_wait_box("Finding matches...")
     self.src_db = None
     self.use_decompiler = False
+
+  def log(self, msg):
+    log(msg)
+
+  def load_hooks(self):
+    if self.project_script is None or self.project_script == "":
+      return True
+
+    try:
+      module = imp.load_source("pigaios_hooks", self.project_script)
+    except:
+      log("Error loading project specific Python script: %s" % str(sys.exc_info()[1]))
+      return False
+
+    if module is None:
+      # How can it be?
+      return False
+
+    keys = dir(module)
+    if 'HOOKS' not in keys:
+      log("Error: The project specific script doesn't export the HOOKS dictionary")
+      return False
+
+    hooks = module.HOOKS
+    if 'PigaiosHooks' not in hooks:
+      log("Error: The project specific script exports the HOOK dictionary but it doesn't contain a 'PigaiosHooks' entry.")
+      return False
+
+    hook_class = hooks["PigaiosHooks"]
+    self.hooks = hook_class(self)
+    return True
 
   def different_versions(self):
     ret = False
     db = sqlite3.connect(self.db_filename)
     cur = db.cursor()
-    sql = "select value from version"
-    cur.execute(sql)
-    row = cur.fetchone()
-    if row:
-      version = row[0]
-      if version != VERSION_VALUE:
-        msg  = "HIDECANCEL\nDatabase version (%s) is different to current version (%s).\n"
-        msg += "Do you want to re-create the database?"
-        msg += "\n\nNOTE: Selecting 'NO' will try to use the non updated database."
-        if askyn_c(0, msg % (version, VERSION_VALUE)) == 1:
+    sql = "select value, status from version"
+    try:
+      cur.execute(sql)
+      row = cur.fetchone()
+      if row:
+        version = row[0]
+        status = row[1]
+        if version != VERSION_VALUE:
+          msg  = "HIDECANCEL\nDatabase version (%s) is different to current version (%s).\n"
+          msg += "Do you want to re-create the database?"
+          msg += "\n\nNOTE: Selecting 'NO' will try to use the non updated database."
+          ret = askyn_c(0, msg % (version, VERSION_VALUE)) == 1
+        elif status != "done":
           ret = True
+        else:
+          ret = False
+    except:
+      print("Error checking version: %s" % str(sys.exc_info()[1]))
+      ret = True
 
     cur.close()
     return ret
@@ -421,9 +490,12 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
       if not from_ida:
         raise Exception("Export process can only be done from within IDA")
 
-      # self.is_old_version(self.db_filename)
+      # Load the project specific hooks
+      self.load_hooks()
+
+      # And export the current database
       log("Exporting current database...")
-      exporter = CBinaryToSourceExporter()
+      exporter = CBinaryToSourceExporter(hooks=self.hooks)
       exporter.export(self.db_filename)
 
   def decompile_and_get(self, ea):
@@ -497,6 +569,7 @@ class CIDABinaryToSourceImporter(CBinaryToSourceImporter):
     return GetFunctionName(ea)
 
   def import_src(self, src_db):
+    self.load_hooks()
     self.src_db = src_db
     matches = False
     try:
@@ -564,7 +637,9 @@ def main():
     lexer.wordchars += "\:-."
     indent_cmd = list(lexer)
 
-    importer = CIDABinaryToSourceImporter()
+    project_script = x.iProjectSpecificRules.value
+    importer = CIDABinaryToSourceImporter(project_script = project_script)
+    importer.hooks = None
     importer.min_level = min_level
     importer.min_display_level = min_display_level
     importer.use_decompiler = x.rUseDecompiler.checked

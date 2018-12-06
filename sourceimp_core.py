@@ -20,6 +20,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import print_function
 
+import os
 import sys
 import json
 import time
@@ -134,9 +135,23 @@ def json_loads(line):
   return json.loads(line.decode("utf-8","ignore"))
 
 #-------------------------------------------------------------------------------
+PROFILING = os.getenv("DIAPHORA_PROFILE") is not None
+def cur_execute(cur, sql, args):
+  if PROFILING:
+    t = time.time()
+
+  cur.execute(sql, args)
+
+  if PROFILING:
+    t = time.time() - t
+    if t > 0.5:
+      print("Running query %s took %f second(s)" % (repr(sql), t))
+
+#-------------------------------------------------------------------------------
 class CBinaryToSourceImporter:
   def __init__(self, db_path):
     self.debug = False
+    self.hooks = None
     self.db_path = db_path
     self.open_or_create_database()
     self.db = sqlite3.connect(self.db_filename)
@@ -181,11 +196,11 @@ class CBinaryToSourceImporter:
     fields = COMPARE_FIELDS
     cur = self.db.cursor()
     sql = "select %s from functions where id = ?" % ",".join(fields)
-    cur.execute(sql, (bin_id,))
+    cur_execute(cur, sql, (bin_id,))
     bin_row = cur.fetchone()
 
     sql = "select %s from src.functions where id = ?" % ",".join(fields)
-    cur.execute(sql, (src_id,))
+    cur_execute(cur, sql, (src_id,))
     src_row = cur.fetchone()
     cur.close()
 
@@ -264,12 +279,12 @@ class CBinaryToSourceImporter:
 
     fields = COMPARE_FIELDS
     cur = self.db.cursor()
-    sql = "select ea, %s from functions where id = ?" % ",".join(fields)
-    cur.execute(sql, (bin_id,))
+    sql = "select ea, guessed_name, all_guessed_names, %s from functions where id = ?" % ",".join(fields)
+    cur_execute(cur, sql, (bin_id,))
     bin_row = cur.fetchone()
 
     sql = "select source, %s from src.functions where id = ?" % ",".join(fields)
-    cur.execute(sql, (src_id,))
+    cur_execute(cur, sql, (src_id,))
     src_row = cur.fetchone()
     cur.close()
 
@@ -283,10 +298,29 @@ class CBinaryToSourceImporter:
     non_zero_num_matches = 0
     same_name = False
     for field in COMPARE_FIELDS:
-      if src_row[field] == bin_row[field] and field == "name":
+      if src_row[field] == bin_row[field] and field in "name":
         same_name = True
         score += 5 * len(fields)
         reasons.append("Same function name")
+      elif field == "name":
+        if bin_row["guessed_name"] == src_row["name"]:
+          same_name = True
+          score += 4 * len(fields)
+          reasons.append("Same guessed function name")
+        elif bin_row["all_guessed_names"] is not None:
+          src_func_name = src_row["name"]
+          guesses = json_loads(bin_row["all_guessed_names"])
+          for guess in guesses:
+            if src_func_name == guess:
+              same_name = True
+              score += 4 * len(fields)
+              reasons.append("Function name in guessed candidates (%s/%s)" % (src_func_name, guess))
+              break
+            elif src_func_name.find(guess) > -1 or guess.find(src_func_name) > -1:
+              same_name = True
+              score += 3 * len(fields)
+              reasons.append("Similar function name in guessed candidates (%s/%s)" % (src_func_name, guess))
+              break
       elif type(src_row[field]) in INTEGER_TYPES:
         if src_row[field] == bin_row[field]:
           score += 1.1
@@ -321,6 +355,12 @@ class CBinaryToSourceImporter:
             if type(src_bin) is str and len(src_bin) < 4:
               continue
 
+            # If we find the function name inside the strings, well, it might be
+            # very well a good indicator of it being the same function
+            if type(src_bin) is str and src_bin.find(src_row["name"]) > -1:
+              score += 1.5
+              reasons.append("Function name found in string constants (%s)" % repr(src_bin))
+
             if src_key == src_bin:
               at_least_one_match = True
               break
@@ -341,7 +381,7 @@ class CBinaryToSourceImporter:
             subset = set(l)
             max_size = max(len(s1), len(s2))
             per_match_score = 20.
-            per_miss_score = 1.0
+            per_miss_score = 3.0
             if field == "callees_json":
               per_match_score = 8.
               per_miss_score = 2.
@@ -375,6 +415,9 @@ class CBinaryToSourceImporter:
                 # a list of all IDs for that specific name.
                 sub_src_ids = self.get_source_ids("name", src_key)
                 sub_bin_id, sub_bin_ea = self.get_binary_id_ea("name", bin_key)
+                if sub_bin_ea is None:
+                  continue
+
                 for sub_src_id in sub_src_ids:
                   if src_key in sub_dones:
                     break
@@ -452,7 +495,7 @@ class CBinaryToSourceImporter:
                  and src.conditions > 1
                  and bin.loops = src.loops """
 
-    cur.execute("select count(*) from src.functions")
+    cur_execute(cur, "select count(*) from src.functions", [])
     row = cur.fetchone()
     total = row[0]
 
@@ -464,7 +507,7 @@ class CBinaryToSourceImporter:
     for i in range(1, 6):
       # Constants must appear less than i% of the time in the sources
       val = (total * i / 100)
-      cur.execute(sql % val)
+      cur_execute(cur, sql % val, [])
       row = cur.fetchone()
       if row:
         rows = cur.fetchall()
@@ -508,7 +551,7 @@ class CBinaryToSourceImporter:
                         from src.constants sc
                        where sc.constant = src_const.constant
                       ) <= 3"""
-    cur.execute(sql)
+    cur_execute(cur, sql, [])
     while 1:
       row = cur.fetchone()
       if not row:
@@ -530,13 +573,13 @@ class CBinaryToSourceImporter:
 
     log("Finding same source files...")
     sql = """ select bin.ea, src.name, src.id, bin.id, bin.name
-                from (select f.id, f.ea, s.source_file source_file, f.name
+                from (select f.id, f.ea, s.basename, f.name
                   from functions f,
                        source_files s
                  where f.ea = s.ea) bin,
                 src.functions src
-               where src.basename = bin.source_file"""
-    cur.execute(sql)
+               where src.basename = bin.basename"""
+    cur_execute(cur, sql, [])
     while 1:
       row = cur.fetchone()
       if not row:
@@ -588,6 +631,8 @@ class CBinaryToSourceImporter:
       if old_score >= score:
         return
 
+    if func_ea is None:
+      raise Exception("Null address given!!!")
     self.best_matches[match_id] = (func_ea, match_name, heur, score, reasons, ml, qr)
 
   def get_binary_id_ea(self, field, value):
@@ -595,7 +640,7 @@ class CBinaryToSourceImporter:
     id = None
     ea = None
     sql = "select id, ea from functions where %s = ?" % field
-    cur.execute(sql, (value, ))
+    cur_execute(cur, sql, (value, ))
     row = cur.fetchone()
     if row is not None:
       id = row["id"]
@@ -613,7 +658,7 @@ class CBinaryToSourceImporter:
                from functions
               where ea = ?
                 and conditions + constants + loops + switchs + calls + externals > 1"""
-    cur.execute(sql, (ea, ))
+    cur_execute(cur, sql, (ea, ))
     row = cur.fetchone()
     if row is not None:
       func_id = row["id"]
@@ -628,7 +673,7 @@ class CBinaryToSourceImporter:
     cur = self.db.cursor()
     func_name = None
     sql = "select name from src.functions where id = ?"
-    cur.execute(sql, (id, ))
+    cur_execute(cur, sql, (id, ))
     row = cur.fetchone()
     if row is not None:
       func_name = row["name"]
@@ -640,7 +685,7 @@ class CBinaryToSourceImporter:
     l = []
     cur = self.db.cursor()
     sql = "select id from src.functions where %s = ?" % field
-    cur.execute(sql, (value, ))
+    cur_execute(cur, sql, (value, ))
     for row in cur.fetchall():
       l.append(row["id"])
     cur.close()
@@ -650,7 +695,7 @@ class CBinaryToSourceImporter:
     cur = self.db.cursor()
     val = None
     sql = "select %s from src.functions where id = ?" % field
-    cur.execute(sql, (id, ))
+    cur_execute(cur, sql, (id, ))
     row = cur.fetchone()
     if row is not None:
       val = row[field]
@@ -663,7 +708,7 @@ class CBinaryToSourceImporter:
 
     cur = self.db.cursor()
     sql = "select callee from src.callgraph where caller = ?"
-    cur.execute(sql, (src_id, ))
+    cur_execute(cur, sql, (src_id, ))
     src_rows = cur.fetchall()
     cur.close()
     self.source_callees_cache[src_id] = src_rows
@@ -675,7 +720,7 @@ class CBinaryToSourceImporter:
 
     cur = self.db.cursor()
     sql = "select callee from callgraph where caller = ?"
-    cur.execute(sql, (str(bin_id), ))
+    cur_execute(cur, sql, (str(bin_id), ))
     bin_rows = cur.fetchall()
     cur.close()
     self.binary_callees_cache[bin_id] = bin_rows
@@ -687,7 +732,7 @@ class CBinaryToSourceImporter:
 
     cur = self.db.cursor()
     sql = "select caller from src.callgraph where callee = ?"
-    cur.execute(sql, (src_id, ))
+    cur_execute(cur, sql, (src_id, ))
     src_rows = cur.fetchall()
     cur.close()
     self.source_callers_cache[src_id] = src_rows
@@ -699,7 +744,7 @@ class CBinaryToSourceImporter:
 
     cur = self.db.cursor()
     sql = "select caller from callgraph where callee = ?"
-    cur.execute(sql, (str(bin_id), ))
+    cur_execute(cur, sql, (str(bin_id), ))
     bin_rows = cur.fetchall()
     cur.close()
     self.binary_callers_cache[bin_id] = bin_rows
@@ -718,7 +763,7 @@ class CBinaryToSourceImporter:
   def find_one_callgraph_match(self, src_id, bin_ea, min_level, call_type="callee", iteration=1):
     cur = self.db.cursor()
     sql = "select * from functions where ea = ?"
-    cur.execute(sql, (str(bin_ea), ))
+    cur_execute(cur, sql, (str(bin_ea), ))
     row = cur.fetchone()
     if row is not None:
       src_rows = list(self.get_source_call_type(src_id, call_type))
@@ -750,7 +795,7 @@ class CBinaryToSourceImporter:
     if score >= min_level:
       cur = self.db.cursor()
       sql = "select id from functions where ea = ?"
-      cur.execute(sql, (str(ea), ))
+      cur_execute(cur, sql, (str(ea), ))
       row = cur.fetchone()
       if row is not None:
         bin_id = long(row["id"])
@@ -762,12 +807,12 @@ class CBinaryToSourceImporter:
         # Find up and downward
         for i in [+1, -1]:
           while 1:
-            cur.execute(src_sql, (src_id, i))
+            cur_execute(cur, src_sql, (src_id, i))
             src_row = cur.fetchone()
             if not src_row:
               break
 
-            cur.execute(bin_sql, (bin_id, i))
+            cur_execute(cur, bin_sql, (bin_id, i))
             bin_row = cur.fetchone()
             if not bin_row:
               break

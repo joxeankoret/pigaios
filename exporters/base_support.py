@@ -294,7 +294,7 @@ class CBaseExporter(object):
                           source text)"""
     cur.execute(sql)
 
-    sql = """ create unique index if not exists idx_callgraph on callgraph (caller, callee) """
+    sql = """ create unique index if not exists idx_callgraph on callgraph (callee) """
     cur.execute(sql)
 
     sql = "create table if not exists version (version text)"
@@ -433,14 +433,13 @@ class CBaseExporter(object):
 
   def create_indexes(self, cur):
     export_log("[+] Creating indexes...")
-    sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
-    cur.execute(sql)
-
-    sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
-    cur.execute(sql)
-
-    sql = "create index if not exists idx_functions_03 on functions (basename)"
-    cur.execute(sql)
+    sql_cmds = [
+      "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)",
+      "create index if not exists idx_functions_02 on functions (conditions, constants_json)",
+      "create index if not exists idx_functions_03 on functions (basename)",
+      ]
+    for sql in sql_cmds:
+      cur.execute(sql)
 
   def get_function_data(self, func, cur=None):
     close = False

@@ -22,6 +22,7 @@ from __future__ import print_function
 
 import re
 import os
+import imp
 import sys
 import json
 import time
@@ -34,7 +35,7 @@ from idautils import *
 from others.tarjan_sort import strongly_connected_components
 
 #-------------------------------------------------------------------------------
-VERSION_VALUE = "Pigaios IDA Exporter 1.3.0"
+VERSION_VALUE = "Pigaios IDA Exporter 1.4"
 
 #-------------------------------------------------------------------------------
 BANNED_FUNCTIONS = ['__asprintf_chk',
@@ -119,6 +120,25 @@ LANGS["Golang"] = ["go"]
 LANGS["OCaml"] = ["ml"]
 
 #-------------------------------------------------------------------------------
+FUNCTION_NAMES_REGEXP = r"([a-z_][a-z0-9_]+((::)+[a-z_][a-z0-9_]+)*)"
+NOT_FUNCTION_NAMES = ["copyright", "char", "bool", "int", "unsigned", "long",
+  "double", "float", "signed", "license", "version", "cannot", "error",
+  "invalid", "null", "warning", "general", "argument", "written", "report",
+  "failed", "assert", "object", "integer", "unknown", "localhost", "native",
+  "memory", "system", "write", "read", "open", "close", "help", "exit", "test",
+  "return", "libs", "home", "ambiguous", "internal", "request", "inserting",
+  "deleting", "removing", "updating", "adding", "assertion", "flags",
+  "overflow", "enabled", "disabled", "enable", "disable", "virtual", "client",
+  "server", "switch", "while", "offset", "abort", "panic", "static", "updated",
+  "pointer", "reason", "month", "year", "week", "hour", "minute", "second", 
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december', "arguments", "corrupt", 
+  "corrupted", "default", "success", "expecting", "missing", "phrase", 
+  "unrecognized", "undefined",
+  ]
+
+#-------------------------------------------------------------------------------
 def log(msg):
   Message("[%s] %s\n" % (time.asctime(), msg))
 
@@ -162,7 +182,62 @@ def get_source_strings(min_len = 4, strtypes = [0, 1]):
           for ref in refs:
             d[full_path].append([ref, GetFunctionName(ref), str(s)])
 
-  return d, src_langs, total_files
+  return d, src_langs, total_files, strings
+
+#-------------------------------------------------------------------------------
+def seems_function_name(candidate):
+  if len(candidate) >= 6 and candidate.lower() not in NOT_FUNCTION_NAMES:
+    if candidate.upper() != candidate:
+      return True
+  return False
+
+#-------------------------------------------------------------------------------
+def guess_function_names(strings_list):
+  rarity = {}
+  func_names = {}
+  raw_func_strings = {}
+  for s in strings_list:
+    ret = re.findall(FUNCTION_NAMES_REGEXP, str(s), re.IGNORECASE)
+    if len(ret) > 0:
+      candidate = ret[0][0]
+      if seems_function_name(candidate):
+        ea = s.ea
+        refs = DataRefsTo(ea)
+        found = False
+        for ref in refs:
+          func = get_func(ref)
+          if func is not None:
+            found = True
+            key = func.startEA
+
+            try:
+              rarity[candidate].add(key)
+            except KeyError:
+              rarity[candidate] = set([key])
+
+            try:
+              func_names[key].add(candidate)
+            except KeyError:
+              func_names[key] = set([candidate])
+
+  final_list = []
+  for key in func_names:
+    candidates = set()
+    for candidate in func_names[key]:
+      if len(rarity[candidate]) == 1:
+        candidates.add(candidate)
+
+    func_name = GetFunctionName(key)
+    tmp = Demangle(func_name, INF_SHORT_DN)
+    if tmp is not None:
+      func_name = tmp
+
+    if len(candidates) == 1:
+      final_list.append([key, func_name, list(candidates)[0], candidates])
+    else:
+      final_list.append([key, func_name, None, candidates])
+
+  return final_list
 
 #-------------------------------------------------------------------------------
 # Compatibility between IDA 6.X and 7.X
@@ -233,11 +308,45 @@ def json_dump(x):
 
 #-------------------------------------------------------------------------------
 class CBinaryToSourceExporter:
-  def __init__(self):
+  def __init__(self, hooks = None):
     self.debug = False
 
     self.db = None
+    self.hooks = hooks
+    self.use_decompiler = False
+    self.project_script = None
     self.names = dict(Names())
+
+  def log(self, msg):
+    log(msg)
+
+  def load_hooks(self):
+    if self.project_script is None or self.project_script == "":
+      return True
+
+    try:
+      module = imp.load_source("pigaios_hooks", self.project_script)
+    except:
+      print("Error loading project specific Python script: %s" % str(sys.exc_info()[1]))
+      return False
+
+    if module is None:
+      # How can it be?
+      return False
+
+    keys = dir(module)
+    if 'HOOKS' not in keys:
+      log("Error: The project specific script doesn't export the HOOKS dictionary")
+      return False
+
+    hooks = module.HOOKS
+    if 'PigaiosHooks' not in hooks:
+      log("Error: The project specific script exports the HOOK dictionary but it doesn't contain a 'PigaiosHooks' entry.")
+      return False
+
+    hook_class = hooks["PigaiosHooks"]
+    self.hooks = hook_class(self)
+    return True
 
   def create_database(self, sqlite_db = None):
     if sqlite_db is None:
@@ -276,7 +385,9 @@ class CBinaryToSourceExporter:
                           callees_json text,
                           recursive integer,
                           indirects integer,
-                          globals   integer)"""
+                          globals   integer,
+                          guessed_name text,
+                          all_guessed_names text)"""
     cur.execute(sql)
 
     sql = """create table if not exists callgraph(
@@ -295,17 +406,17 @@ class CBinaryToSourceExporter:
     sql = """create table if not exists source_files(
                           id integer not null primary key,
                           full_path text,
-                          source_file text,
+                          basename text,
                           ea text)"""
     cur.execute(sql)
 
     sql = """ create unique index idx_callgraph on callgraph (caller, callee) """
     cur.execute(sql)
 
-    sql = """ create table if not exists version (value text) """
+    sql = """ create table if not exists version (value text, status text) """
     cur.execute(sql)
 
-    sql = "insert into version values (?)"
+    sql = "insert into version (value) values (?)"
     cur.execute(sql, (VERSION_VALUE,))
 
     cur.close()
@@ -383,6 +494,11 @@ class CBinaryToSourceExporter:
     prototype = GetType(f)
     if prototype is None:
       prototype = GuessType(f)
+
+    if self.hooks is not None:
+      ret = self.hooks.before_export_function(f, func_name)
+      if not ret:
+        return ret
 
     prototype2 = None
     ti = GetTinfo(f)
@@ -488,6 +604,16 @@ class CBinaryToSourceExporter:
       print("Global uses : %d" % len(globals_uses))
       print()
 
+    args = (str(f), func_name, prototype, prototype2, conditions,
+            len(constants), json_dump(list(constants)), loops, len(switches),
+            json_dump(list(switches)), len(calls), len(list(externals)),
+            recursive, int(indirects), len(globals_uses),
+            json_dump(callees))
+    if self.hooks is not None:
+      d = self.create_function_dictionary(args)
+      d = self.hooks.after_export_function(d)
+      args = self.get_function_from_dictionary(d)
+
     cur = self.db.cursor()
     sql = """insert into functions(
                          ea, name, prototype, prototype2, conditions,
@@ -496,11 +622,6 @@ class CBinaryToSourceExporter:
                          indirects, globals, callees_json
                          )
                          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
-    args = (str(f), func_name, prototype, prototype2, conditions,
-            len(constants), json_dump(list(constants)), loops, len(switches),
-            json_dump(list(switches)), len(calls), len(list(externals)),
-            recursive, int(indirects), len(globals_uses),
-            json_dump(callees))
     cur.execute(sql, args)
     rowid = cur.lastrowid
 
@@ -515,9 +636,36 @@ class CBinaryToSourceExporter:
 
     cur.close()
 
+  def create_function_dictionary(self, args):
+    d = {}
+    d["ea"] = args[0]
+    d["name"] = args[1]
+    d["prototype"] = args[2]
+    d["prototype2"] = args[3]
+    d["conditions"] = args[4]
+    d["constants"] = args[5]
+    d["constants_json"] = args[6]
+    d["loops"] = args[7]
+    d["switchs"] = args[8]
+    d["switchs_json"] = args[9]
+    d["calls"] = args[10]
+    d["externals"] = args[11]
+    d["recursive"] = args[12]
+    d["indirects"] = args[13]
+    d["globals"] = args[14]
+    d["callees_json"] = args[15]
+    return d
+
+  def get_function_from_dictionary(self, d):
+    l = (d["ea"], d["name"], d["prototype"], d["prototype2"], d["conditions"],
+         d["constants"], d["constants_json"], d["loops"], d["switchs"], 
+         d["switchs_json"], d["calls"], d["externals"], d["recursive"],
+         d["indirects"], d["globals"], d["callees_json"])
+    return l
+
   def save_source_files(self, d):
     cur = self.db.cursor()
-    sql = """ insert into source_files (full_path, source_file, ea)
+    sql = """ insert into source_files (full_path, basename, ea)
                                 values (?, ?, ?)"""
     for full_path in d:
       source_file = basename(full_path).lower()
@@ -525,6 +673,15 @@ class CBinaryToSourceExporter:
         func = get_func(ea)
         if func:
           cur.execute(sql, (full_path, source_file, str(func.startEA),))
+    cur.close()
+
+  def save_guessed_function_names(self, strings):
+    cur = self.db.cursor()
+    sql = "update functions set guessed_name = ?, all_guessed_names = ? where ea = ?" 
+    guesses = guess_function_names(strings)
+    for guess in guesses:
+      ea, _, best_candidate, candidates = guess
+      cur.execute(sql, (best_candidate, json_dump(list(candidates)), ea))
     cur.close()
 
   def export(self, filename=None):
@@ -537,7 +694,13 @@ class CBinaryToSourceExporter:
       show_wait_box("Exporting database...")
       i = 0
       t = time.time()
-      func_list = list(Functions())
+
+      start_ea = MinEA()
+      end_ea   = MaxEA()
+      if self.hooks is not None:
+        start_ea, end_ea = self.hooks.get_export_range()
+
+      func_list = list(Functions(start_ea, end_ea))
       total_funcs = len(func_list)
       for f in func_list:
         i += 1
@@ -557,7 +720,7 @@ class CBinaryToSourceExporter:
     finally:
       hide_wait_box()
 
-    d, src_langs, total_files = get_source_strings()
+    d, src_langs, total_files, strings = get_source_strings()
     if len(d) > 0:
       for key in src_langs:
         log("Found programming language %s -> %f%%" % (key.ljust(10), src_langs[key] * 100. / total_files))
@@ -565,13 +728,22 @@ class CBinaryToSourceExporter:
     log("Finding source files...")
     self.save_source_files(d)
 
+    log("Guessing function names...")
+    self.save_guessed_function_names(strings)
+
     sql = "create index if not exists idx_functions_01 on functions (name, conditions, constants_json)"
     self.db.execute(sql)
 
     sql = "create index if not exists idx_functions_02 on functions (conditions, constants_json)"
     self.db.execute(sql)
 
-    sql = "create index if not exists idx_source_file on source_files (source_file)"
+    sql = "create index if not exists idx_functions_03 on functions (guessed_name, all_guessed_names)"
+    self.db.execute(sql)
+
+    sql = "create index if not exists idx_source_file on source_files (basename)"
+    self.db.execute(sql)
+
+    sql = "update version set status = 'done'"
     self.db.execute(sql)
 
     self.db.execute("COMMIT")
