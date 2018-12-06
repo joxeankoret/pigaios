@@ -427,7 +427,7 @@ class CBaseExporter(object):
             raise
           except:
             # Ignore unique constraint violations
-            print("final_steps():", str(sys.exc_info()[1]))
+            export_log("Error at final_steps(): %s" % (str(sys.exc_info()[1])))
 
     cur.execute("COMMIT")
 
