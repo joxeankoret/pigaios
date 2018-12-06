@@ -294,7 +294,7 @@ class CBaseExporter(object):
                           source text)"""
     cur.execute(sql)
 
-    sql = """ create unique index if not exists idx_callgraph on callgraph (callee) """
+    sql = """ create unique index if not exists idx_callgraph on callgraph (callee, caller) """
     cur.execute(sql)
 
     sql = "create table if not exists version (version text)"
