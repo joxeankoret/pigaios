@@ -405,11 +405,11 @@ class CDiffChooser(Choose2):
         Warning("Cannot decompile function 0x%08x" % ea)
         return False
 
-      buf1 = indent_source(row[0])
+      buf1 = indent_source(row[0].decode("utf-8", "ignore"))
       buf2 = proto
-      buf2 += "\n".join(self.differ.pseudo[ea])
+      buf2 += u"\n".join(self.differ.pseudo[ea])
       new_buf = indent_source(buf2)
-      src = html_diff.make_file(new_buf.split("\n"), buf1.split("\n"))
+      src = html_diff.make_file(new_buf.split(u"\n"), buf1.split(u"\n"))
 
       title = "Diff pseudo-source %s - %s" % (item[2], item[4])
       cdiffer = CHtmlViewer()
