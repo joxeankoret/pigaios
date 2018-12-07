@@ -1,7 +1,7 @@
 # Dataset
 
-The following is a dataset created with the good matches discovered between ZLib 1.2.11 & 1.2.5, Curl, Lua, Busybox and SQLite.
-It contains all the positives found between the source code and the binaries as well as a random selection of 100,000 negative results, created with the following easy SQLite3 command line tool script:
+The following is a dataset created with the good matches discovered between ZLib 1.2.11, Libxml2, Curl, Busybox, GMP, the whole coreutils and SQLite.
+It contains all the positives found between the source code and the binaries as well as a random selection of 1,000,000 negative results, created with the following easy SQLite3 command line tool script:
 
 ```
 $ sqlite3 dataset.db
@@ -18,9 +18,10 @@ sqlite> .quit
 
 The current classifier is based on the results of multiple other classifiers, namely: 
 
- * Decision Tree Regressor.
+ * Decision Tree Classifier.
+ * RandomForestClassifier.
  * Bernoulli Naive Bayes.
- * Gradient Boosting Regressor.
+ * Gradient Boosting Classifier.
 
 Using this multi-classifier to train an adapted dataset the following initial results were observed and reproduced:
 
@@ -36,15 +37,39 @@ $ ml/pigaios_ml.py -multi -v
 Later on, after refining the dataset and adding more fields, the following results were observed:
 
 ```
-$ ml/pigaios_ml.py -multi -v
-[Tue Sep 25 11:54:06 2018] Using the Pigaios Multi Classifier
-[Tue Sep 25 11:54:06 2018] Loading model and data...
-[Tue Sep 25 11:54:07 2018] Predicting...
-[Tue Sep 25 11:54:22 2018] Correctly predicted 5140 out of 6989 (true positives 1849 -> 73.544141%, false positives 161 -> 0.161000%)
-[Tue Sep 25 11:54:22 2018] Total right matches 104979 -> 98.121302%
+$ ../ml/pigaios_ml.py -multi -t
+[Thu Dec  6 20:50:08 2018] Using the Pigaios Multi Classifier
+[Thu Dec  6 20:50:08 2018] Loading data...
+[Thu Dec  6 20:50:16 2018] Fitting data with CPigaiosMultiClassifier(None)...
+Fitting DecisionTreeClassifier(class_weight=None, criterion='gini', max_depth=None,
+            max_features=None, max_leaf_nodes=None,
+            min_impurity_decrease=0.0, min_impurity_split=None,
+            min_samples_leaf=1, min_samples_split=2,
+            min_weight_fraction_leaf=0.0, presort=False, random_state=None,
+            splitter='best')
+Fitting BernoulliNB(alpha=1.0, binarize=0.0, class_prior=None, fit_prior=True)
+Fitting GradientBoostingClassifier(criterion='friedman_mse', init=None,
+              learning_rate=0.1, loss='deviance', max_depth=3,
+              max_features=None, max_leaf_nodes=None,
+              min_impurity_decrease=0.0, min_impurity_split=None,
+              min_samples_leaf=1, min_samples_split=2,
+              min_weight_fraction_leaf=0.0, n_estimators=100,
+              presort='auto', random_state=None, subsample=1.0, verbose=0,
+              warm_start=False)
+Fitting RandomForestClassifier(bootstrap=True, class_weight=None, criterion='gini',
+            max_depth=None, max_features='auto', max_leaf_nodes=None,
+            min_impurity_decrease=0.0, min_impurity_split=None,
+            min_samples_leaf=1, min_samples_split=2,
+            min_weight_fraction_leaf=0.0, n_estimators=10, n_jobs=1,
+            oob_score=False, random_state=None, verbose=0,
+            warm_start=False)
+[Thu Dec  6 20:54:26 2018] Predicting...
+[Thu Dec  6 21:05:14 2018] Correctly predicted 13813 out of 19075 (false negatives 5262 -> 27.585845%, false positives 832 -> 0.083200%)
+[Thu Dec  6 21:05:14 2018] Total right matches 1012981 -> 99.402007%
+[Thu Dec  6 21:05:14 2018] Saving model...
 ```
 
-So, in summary, our model predicts >98% matches from the dataset correctly with ~0.1% of false positives, which is more than acceptable.
+So, in summary, our model predicts >98% matches from the dataset correctly with ~0.5% of false positives, which is more than acceptable.
 
 ## How to generate datasets
 
