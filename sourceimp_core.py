@@ -280,10 +280,7 @@ class CBinaryToSourceImporter:
           self.ml_model = self.ml_classifier.load_model()
 
         line = map(float, line)
-        ml = self.ml_model.predict(np.array(line).reshape(1, -1))
-        ml = float(ml)
-        if round(ml) == 0.0:
-          ml = 0
+        ml = self.ml_model.predict_proba(np.array(line).reshape(1, -1))
 
     fields = COMPARE_FIELDS
     cur = self.db.cursor()

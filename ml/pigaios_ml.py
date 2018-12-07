@@ -66,10 +66,7 @@ SK_MINOR = int(sklearn.__version__.split(".")[1])
 # very interesting, but I'll leave it here.
 #
 ML_CLASSIFIERS = [
-  (tree.DecisionTreeClassifier, "Decision Tree Classifier", "gini"),
-  (naive_bayes.BernoulliNB, "Bernoulli Naive Bayes", 1.0),
-  (ensemble.GradientBoostingClassifier, "Gradient Boosting Classifier", "deviance"),
-  (ensemble.RandomForestClassifier, "Random Forest Classifier", 10),
+  (tree.DecisionTreeClassifier, "Decision Tree Classifier", []),
   ]
 
 #-------------------------------------------------------------------------------
@@ -114,12 +111,16 @@ class CPigaiosVotingClassifier(ensemble.VotingClassifier):
 class CPigaiosMultiClassifier(object):
   def __init__(self, random_state=None):
     self.clfs = {}
-    for classifier, name, arg in ML_CLASSIFIERS:
+    for classifier, name, args in ML_CLASSIFIERS:
       has_seed = 'random_state' in dir(classifier.__init__.im_class())
       if has_seed:
-        self.clfs[name] = classifier(arg, random_state=random_state)
+        self.clfs[name] = classifier(random_state=random_state)
+        for arg_name, arg_value in args:
+          setattr(self.clfs[name], arg_name, arg_value)
       else:
-        self.clfs[name] = classifier(arg)
+        self.clfs[name] = classifier()
+        for arg_name, arg_value in args:
+          setattr(self.clfs[name], arg_name, arg_value)
 
   def fit(self, X, y):
     threads = []
@@ -151,21 +152,25 @@ class CPigaiosMultiClassifier(object):
 
     return val
 
+  def predict_proba(self, input_val):
+    ret = []
+    for clf in self.clfs.values():
+      ret.append(clf.predict_proba(input_val)[0][1])
+    return sum(ret) / len(ret)
+
 #-------------------------------------------------------------------------------
 class CPigaiosClassifier:
   def __init__(self):
     self.X = []
     self.y = []
     self.clf = None
-    self.criterion = "mse"
-
-    self.dt_type = tree.DecisionTreeRegressor
+    self.criterion = "gini"
+    self.dt_type = tree.DecisionTreeClassifier
 
   def load_data(self, dataset="dataset.csv"):
     if len(self.X) > 0:
       return self.X, self.y
 
-    lines = open(dataset, "rb").readlines()
     x_values = []
     y_values = []
     with open(dataset, "r") as f:
