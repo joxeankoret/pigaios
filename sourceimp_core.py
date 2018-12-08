@@ -91,12 +91,14 @@ NEARBY_FUNCTION = 2
 CALLGRAPH_MATCH = 3
 SPECIFIC_CALLEE_SEARCH = 4
 SAME_SOURCE_FILE = 5
+SAME_GUESSED_FUNCTION = 6
 
 # All heuristics are equal, but some are more equal than others.
 HEURISTICS = {
   ATTRIBUTES_MATCHING     : 1.0,
   SAME_RARE_CONSTANT      : 1.0,
   SAME_SOURCE_FILE        : 1.0,
+  SAME_GUESSED_FUNCTION   : 1.0,
   NEARBY_FUNCTION         : 0.8,
   CALLGRAPH_MATCH         : 0.7,
   SPECIFIC_CALLEE_SEARCH  : 0.7,
@@ -106,6 +108,7 @@ ML_HEURISTICS = {
   ATTRIBUTES_MATCHING     :1.,
   SAME_RARE_CONSTANT      :2.,
   SAME_SOURCE_FILE        :2.,
+  SAME_GUESSED_FUNCTION   :2.,
   NEARBY_FUNCTION         :4.,
   CALLGRAPH_MATCH         :9,
   SPECIFIC_CALLEE_SEARCH  :5.
@@ -323,7 +326,7 @@ class CBinaryToSourceImporter:
               break
             elif src_func_name.find(guess) > -1 or guess.find(src_func_name) > -1:
               same_name = True
-              score += 3 * len(fields)
+              score += 2
               reasons.append("Similar function name in guessed candidates (%s/%s)" % (src_func_name, guess))
               break
       elif type(src_row[field]) in INTEGER_TYPES:
@@ -544,6 +547,7 @@ class CBinaryToSourceImporter:
         self.add_match(match_id, func_ea, match_name, "Attributes matching",
                        score, reasons, ml, qr)
 
+    heurs = []
     sql = """ select distinct bin_func.ea, src_func.name, src_func.id, bin_func.id
                 from functions bin_func,
                      constants bin_const,
@@ -556,27 +560,14 @@ class CBinaryToSourceImporter:
                         from src.constants sc
                        where sc.constant = src_const.constant
                       ) <= 3"""
-    cur_execute(cur, sql, [])
-    while 1:
-      row = cur.fetchone()
-      if not row:
-        break
+    heurs.append(["same rare constant", sql, SAME_RARE_CONSTANT])
 
-      size += 1
-      func_ea = long(row[0])
-      match_name = row[1]
-      match_id = row[2]
-      bin_id = row[3]
-      score, reasons, ml, qr = self.compare_functions(match_id, bin_id, SAME_RARE_CONSTANT)
-      self.add_match(match_id, func_ea, match_name, "Same rare constant",
-                     score, reasons, ml, qr)
+    sql = """ select bin.ea, src.name, src.id, bin.id, bin.name
+                from functions bin,
+                     src.functions src
+               where bin.guessed_name = src.name """
+    heurs.append(["same guessed function name", sql, SAME_GUESSED_FUNCTION])
 
-      if score < min_score:
-        min_score = score
-      if score > max_score:
-        max_score = score
-
-    log("Finding same source files...")
     sql = """ select bin.ea, src.name, src.id, bin.id, bin.name
                 from (select f.id, f.ea, s.basename, f.name
                   from functions f,
@@ -584,26 +575,30 @@ class CBinaryToSourceImporter:
                  where f.ea = s.ea) bin,
                 src.functions src
                where src.basename = bin.basename"""
-    cur_execute(cur, sql, [])
-    while 1:
-      row = cur.fetchone()
-      if not row:
-        break
+    heurs.append(["same source file", sql, SAME_SOURCE_FILE])
 
-      size += 1
-      func_ea = long(row[0])
-      match_name = row[1]
-      match_id = row[2]
-      bin_id = row[3]
-      score, reasons, ml, qr = self.compare_functions(match_id, bin_id, SAME_SOURCE_FILE)
-      if score >= 0.3 or ml == 1.0:
-        self.add_match(match_id, func_ea, match_name, "Same source file", score,
-                       reasons, ml, qr)
+    for heur_name, sql, heur_id in heurs:
+      log("Finding %s..." % heur_name)
+      cur_execute(cur, sql, [])
+      while 1:
+        row = cur.fetchone()
+        if not row:
+          break
 
-      if score < min_score:
-        min_score = score
-      if score > max_score:
-        max_score = score
+        size += 1
+        func_ea = long(row[0])
+        match_name = row[1]
+        match_id = row[2]
+        bin_id = row[3]
+        score, reasons, ml, qr = self.compare_functions(match_id, bin_id, heur_id)
+        if score >= 0.3 or ml == 1.0:
+          self.add_match(match_id, func_ea, match_name, heur_name.capitalize(),
+                         score, reasons, ml, qr)
+
+        if score < min_score:
+          min_score = score
+        if score > max_score:
+          max_score = score
 
     log("Minimum score %f, maximum score %f" % (min_score, max_score))
     # We have had too good matches or too few, use a more relaxed minimum score
