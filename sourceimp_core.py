@@ -595,7 +595,7 @@ class CBinaryToSourceImporter:
           self.add_match(match_id, func_ea, match_name, heur_name.capitalize(),
                          score, reasons, ml, qr)
 
-        if score < min_score:
+        if score < min_score and score > 0.0:
           min_score = score
         if score > max_score:
           max_score = score

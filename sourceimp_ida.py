@@ -59,6 +59,7 @@ from sourcexp_ida import log, CBinaryToSourceExporter, VERSION_VALUE
 
 #-------------------------------------------------------------------------------
 _DEBUG = False
+LITTLE_ORANGE = 0x026AFD
 
 #-------------------------------------------------------------------------------
 def log(msg):
@@ -310,7 +311,7 @@ class CDiffChooser(Choose2):
     if not bin_name.startswith("sub_"):
       src_name = line[2].strip("_").strip(".")
       if bin_name.find(src_name) == -1:
-        return [0x0000FF, 0]
+        return [LITTLE_ORANGE, 0]
 
     ratio = max(float(line[5]), float(line[7]))
     red = abs(int(164 * (1 - ratio)))
