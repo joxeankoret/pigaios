@@ -134,6 +134,23 @@ Once we have a binary opened in IDA that we know is using ZLib we can match func
 
 And that's it! Hopefully, it will make the life of reverse engineers easier and we will have to spend less time doing boring tasks like importing symbols or waste time reverse engineering open source libraries statically compiled in our targets.
 
+## Screenshots
+
+List of matches between a Busybox 1.26.2 PowerPC binary and the 1.28 source code from the GIT repository:
+
+![List of matches between a Busybox 1.26.2 PPC binary and the 1.28 source code from the GIT repository](https://user-images.githubusercontent.com/2945834/49733950-2961f100-fc83-11e8-8a1d-254791382314.png)
+
+Visually diffing the pseudo-code of a function in some ```xmllint``` binary and the source code of libxml2:
+
+![Visually diffing the pseudo-code of a function in some xmllint binary and the source code of libxml2](https://user-images.githubusercontent.com/2945834/49734123-8eb5e200-fc83-11e8-956c-f9b029f331f8.png)
+
+Local types IDA view **before** importing symbols from the matches found between a Busybox 1.26.2 PowerPC binary and the 1.28 source code from the GIT repository:
+
+![image](https://user-images.githubusercontent.com/2945834/49734194-d3da1400-fc83-11e8-8380-91837bb7ca16.png)
+
+And the same view **after** importing symbols:
+![image](https://user-images.githubusercontent.com/2945834/49734286-1d2a6380-fc84-11e8-9560-d2fb054a4c70.png)
+
 ## License
 
 Pigaios is released under the GPL v3 license but commercial licenses for proprietary developments can be purchased. Contact admin AT joxeankoret DOT com for more details.
