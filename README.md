@@ -13,6 +13,10 @@ Basically, the tool does the following:
  
  The tool will be released at some point in October.
 
+## Donations
+
+You can help (or thank) the author of Pigaios by making a donation, if you feel like doing so: [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=LKGZZNUCZFYG8&source=url)
+
 ## Requirements
 
 This project requires the installation of the CLang's Python bindings, Colorama is required for displaying colours (but is optional) and SciKit Learn is required for the Machine Learning part (which is also optional). You can install in Debian based Linux distros the dependencies with the following command:
