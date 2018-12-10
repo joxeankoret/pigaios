@@ -13,6 +13,8 @@ Basically, the tool does the following:
  
 The tool was released in October 2018, during the [Hacktivity](https://www.hacktivity.com/) conference.
 
+NOTE: If you're looking for a tool for diffing or matching between binaries or if you can properly build binaries, you might want to take a look to [Diaphora](https://github.com/joxeankoret/diaphora).
+
 ## Donations
 
 You can help (or thank) the author of Pigaios by making a donation, if you feel like doing so: [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=LKGZZNUCZFYG8&source=url)
