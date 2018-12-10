@@ -681,7 +681,7 @@ class CBinaryToSourceExporter:
     guesses = guess_function_names(strings)
     for guess in guesses:
       ea, _, best_candidate, candidates = guess
-      cur.execute(sql, (best_candidate, json_dump(list(candidates)), ea))
+      cur.execute(sql, (best_candidate, json_dump(list(candidates)), str(ea)))
     cur.close()
 
   def export(self, filename=None):
