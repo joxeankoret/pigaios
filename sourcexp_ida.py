@@ -524,6 +524,8 @@ class CBinaryToSourceExporter:
     flow = FlowChart(func)
     for block in flow:
       block_ea = block.startEA
+      if block.endEA == 0 or block_ea == BADADDR:
+        continue
 
       # ...and each instruction on each basic block
       for ea in list(Heads(block.startEA, block.endEA)):

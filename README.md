@@ -4,14 +4,20 @@ Pigaios ('πηγαίος', Greek for 'source' as in 'source code') is a tool for
 
 Basically, the tool does the following:
 
- * Parse C source code and get artifacts from the Abstract Syntax Tree (AST) of each function.
+ * Parse C source code and extract features from the Abstract Syntax Tree (AST) of each function.
  * Export the same data extracted from C source codes from IDA databases.
- * Find matches between the artifacts found in C source codes and IDA databases.
+ * Find matches between the features found in C source codes and IDA databases.
  * After an initial set of matches with no false positive is found, find more matches from the callgraph.
  * Rate the matches using both an "expert system" and a "machine learning" based system.
  * Also, import into the IDA database all the required structures and enumerations of a given code base (something not trivial in IDA).
  
- The tool will be released at some point in October.
+The tool was released in October 2018, during the [Hacktivity](https://www.hacktivity.com/) conference.
+
+NOTE: If you're looking for a tool for diffing or matching between binaries or if you can properly build binaries, you might want to take a look to [Diaphora](https://github.com/joxeankoret/diaphora).
+
+## Donations
+
+You can help (or thank) the author of Pigaios by making a donation, if you feel like doing so: [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=LKGZZNUCZFYG8&source=url)
 
 ## Requirements
 
@@ -84,78 +90,44 @@ We will just remove all the lines for the files in "examples/" or "test/". After
 
 ```
 $ srcbindiff.py -export
-[+] CC contrib/testzlib/testzlib.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
+Using a total of 8 thread(s)
+[+] CC examples/gzjoin.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CC examples/fitblk.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CC examples/enough.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CC examples/gzappend.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CC examples/zran.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CC examples/zpipe.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CC examples/gzlog.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CC examples/gun.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+examples/zran.c:402,68: warning: format specifies type 'unsigned long long' but the argument has type 'off_t' (aka 'long')
+[+] CC contrib/testzlib/testzlib.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CXX contrib/iostream/test.cpp -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
 contrib/testzlib/testzlib.c:3,10: fatal: 'windows.h' file not found
-[+] CXX contrib/iostream/test.cpp -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
+[+] CXX contrib/iostream/zfstream.cpp -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
 contrib/iostream/zfstream.h:5,10: fatal: 'fstream.h' file not found
-[+] CXX contrib/iostream/zfstream.cpp -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
 contrib/iostream/zfstream.h:5,10: fatal: 'fstream.h' file not found
-[+] CXX contrib/iostream3/test.cc -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CXX contrib/iostream3/zfstream.cc -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/untgz/untgz.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-contrib/untgz/untgz.c:277,7: warning: implicit declaration of function 'chmod' is invalid in C99
-contrib/untgz/untgz.c:341,7: warning: implicit declaration of function 'mkdir' is invalid in C99
-contrib/untgz/untgz.c:659,11: warning: incompatible pointer types assigning to 'gzFile *' (aka 'struct gzFile_s **') from 'gzFile' (aka 'struct gzFile_s *')
-contrib/untgz/untgz.c:665,18: warning: incompatible pointer types passing 'gzFile *' (aka 'struct gzFile_s **') to parameter of type 'gzFile' (aka 'struct gzFile_s *'); dereference with *
-[+] CC contrib/inflate86/inffas86.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/infback9/infback9.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/infback9/inftree9.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/blast/blast.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CXX contrib/iostream2/zstream_test.cpp -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-contrib/iostream2/zstream.h:27,10: fatal: 'strstream.h' file not found
-[+] CC contrib/minizip/ioapi.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/minizip/miniunz.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-contrib/minizip/miniunz.c:100,13: warning: extra tokens at end of #ifdef directive
-contrib/minizip/miniunz.c:131,11: warning: implicit declaration of function 'mkdir' is invalid in C99
-contrib/minizip/miniunz.c:418,25: warning: passing 'const char *' to parameter of type 'char *' discards qualifiers
-[+] CC contrib/minizip/minizip.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-contrib/minizip/minizip.c:97,13: warning: extra tokens at end of #ifdef directive
-contrib/minizip/minizip.c:411,26: warning: passing 'const char *' to parameter of type 'char *' discards qualifiers
-[+] CC contrib/minizip/unzip.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/minizip/zip.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/minizip/mztools.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/minizip/iowin32.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-contrib/minizip/iowin32.h:14,10: fatal: 'windows.h' file not found
-[+] CC contrib/masmx64/inffas8664.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/puff/puff.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC contrib/puff/pufftest.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC gzlib.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-gzlib.c:252,9: warning: implicit declaration of function 'lseek' is invalid in C99
-[+] CC compress.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC gzread.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-gzread.c:35,15: warning: implicit declaration of function 'read' is invalid in C99
-gzread.c:651,11: warning: implicit declaration of function 'close' is invalid in C99
-[+] CC gzclose.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC crc32.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC uncompr.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC inflate.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC gzwrite.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-gzwrite.c:89,20: warning: implicit declaration of function 'write' is invalid in C99
-gzwrite.c:661,9: warning: implicit declaration of function 'close' is invalid in C99
-[+] CC adler32.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC zutil.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC trees.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC deflate.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC inftrees.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC infback.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] CC inffast.c -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -Iinclude
-[+] Building the callgraph...
-
-14 warning(s), 0 error(s), 5 fatal error(s)
+[+] CXX contrib/iostream3/test.cc -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+[+] CXX contrib/iostream3/zfstream.cc -I/usr/lib/llvm-3.8/bin/../lib/clang/3.8.0/include -I. -I./include
+(...)
+[+] Building definitions...
+[i] Creating headers definition file zlib-1.2.11-exported.h...
+[+] Building the callgraphs...
+[+] Building the constants table...
+[+] Creating indexes...
 ```
 
-As we can see, it compiled, parsed and generated everything from the source code and the process generated 14 warnings and 5 errors. The errors are because I'm compiling the ZLib source code in Linux and I don't have the windows.h header, for example. We can remove the files that are failing or we can just ignore them as one feature of this project is that it can parse both partial and non compilable source codes. Whatever we decide to do, we will have a SQLite database called "zlib-1.2.11.sqlite" in the same directory where we ran the command. We can open that database with whatever tool that supports SQLite databases, if we want to do so, like its command line tool:
+As we can see, it compiled, parsed and generated everything from the source code and the process generated various warnings and errors. The errors are because I'm compiling the ZLib source code in Linux and I don't have the windows.h header, for example. We can remove the files that are failing or we can just ignore them as one feature of this project is that it can parse both partial and non compilable source codes. Whatever we decide to do, we will have a SQLite database called "zlib-1.2.11.sqlite" in the same directory where we ran the command. We can open that database with whatever tool that supports SQLite databases, if we want to do so, like its command line tool:
 
 ```
 $ sqlite3 zlib-1.2.11.sqlite 
 SQLite version 3.11.0 2016-02-15 17:29:24
 Enter ".help" for usage hints.
 sqlite> select name from functions limit 5;
-MyDoMinus64
-myGetRDTSC32
-BeginCountRdtsc
-GetResRdtsc
 BeginCountPerfCounter
+BeginCountRdtsc
+Display64BitsSize
+ExprMatch
+ExprMatch
 ```
 
 ## Importing symbols in IDA
@@ -163,6 +135,23 @@ BeginCountPerfCounter
 Once we have a binary opened in IDA that we know is using ZLib we can match functions directly from the source code by running the IDAPython script ```sourceimp_ida.py``` and selecting in the dialog the zlib-1.2.11.sqlite file we just exported before. After a few seconds, it will discover various functions by, first, just issuing some simple SQL queries and, later on, will find many more symbols by traversing the call graph of the initial matches (that should have near zero false positives) and find more matches. At the same time, you should have all the structures and enumerations that were found while parsing the ZLib source code.
 
 And that's it! Hopefully, it will make the life of reverse engineers easier and we will have to spend less time doing boring tasks like importing symbols or waste time reverse engineering open source libraries statically compiled in our targets.
+
+## Screenshots
+
+List of matches between a Busybox 1.26.2 PowerPC binary and the 1.28 source code from the GIT repository:
+
+![List of matches between a Busybox 1.26.2 PPC binary and the 1.28 source code from the GIT repository](https://user-images.githubusercontent.com/2945834/49733950-2961f100-fc83-11e8-8a1d-254791382314.png)
+
+Visually diffing the pseudo-code of a function in some ```xmllint``` binary and the source code of libxml2:
+
+![Visually diffing the pseudo-code of a function in some xmllint binary and the source code of libxml2](https://user-images.githubusercontent.com/2945834/49734123-8eb5e200-fc83-11e8-956c-f9b029f331f8.png)
+
+Local types IDA view **before** importing symbols from the matches found between a Busybox 1.26.2 PowerPC binary and the 1.28 source code from the GIT repository:
+
+![image](https://user-images.githubusercontent.com/2945834/49734194-d3da1400-fc83-11e8-8380-91837bb7ca16.png)
+
+And the same view **after** importing symbols:
+![image](https://user-images.githubusercontent.com/2945834/49734286-1d2a6380-fc84-11e8-9560-d2fb054a4c70.png)
 
 ## License
 
