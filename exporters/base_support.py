@@ -334,7 +334,6 @@ class CBaseExporter(object):
       msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
       export_log(msg)
       self.fatals += 1
-      raise
 
   def export_parallel(self):
     c_args = ["-I%s" % self.config.get('GENERAL', 'includes')]
@@ -692,7 +691,6 @@ class CBaseExporter(object):
           msg = "%s: fatal: %s" % (filename, str(sys.exc_info()[1]))
           export_log(msg)
           self.fatals += 1
-          raise
 
     self.final_steps()
 
