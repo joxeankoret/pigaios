@@ -25,10 +25,13 @@ import json
 import shlex
 import sqlite3
 import itertools
-import ConfigParser
+try:
+  import configparser
+except ImportError:
+  import ConfigParser as configparser
 
 from threading import current_thread
-from terminalsize import get_terminal_size
+from .terminalsize import get_terminal_size
 
 from threading import Lock
 from multiprocessing.pool import Pool
@@ -183,7 +186,9 @@ def all_combinations(items):
 
 #-------------------------------------------------------------------------------
 def json_loads(line):
-  return json.loads(line.decode("utf-8","ignore"))
+  if sys.version_info < (3, 0) or line is bytes:
+    line = line.decode("utf-8", "ignore")
+  return json.loads(line)
 
 #-------------------------------------------------------------------------------
 def _pickle_method(method):
@@ -203,15 +208,18 @@ def _unpickle_method(func_name, obj, cls):
 
   return func.__get__(obj, cls)
 
-import copy_reg
+try:
+  import copyreg
+except:
+  import copy_reg as copyreg
 import types
-copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
+copyreg.pickle(types.MethodType, _pickle_method, _unpickle_method)
 
 #-------------------------------------------------------------------------------
 class CBaseExporter(object):
   def __init__(self, cfg_file):
     self.cfg_file = cfg_file
-    self.config = ConfigParser.ConfigParser()
+    self.config = configparser.ConfigParser()
     self.config.optionxform = str
     self.config.read(cfg_file)
     self.db = {}

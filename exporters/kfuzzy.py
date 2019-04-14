@@ -24,7 +24,10 @@ import os
 import sys
 import base64
 
-from itertools import imap
+try:
+	from itertools import imap
+except ImportError:
+    imap = map
 
 try:
     from fasttoad_wrap import modsum

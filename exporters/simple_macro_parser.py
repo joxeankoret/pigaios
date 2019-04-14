@@ -24,8 +24,8 @@ import re
 import sys
 import decimal
 
-from SimpleEval import SimpleEval
-from kfuzzy import CKoretFuzzyHashing
+from .SimpleEval import SimpleEval
+from .kfuzzy import CKoretFuzzyHashing
 
 try:
   long        # Python 2
@@ -34,6 +34,8 @@ except NameError:
 
 #-------------------------------------------------------------------------------
 MACROS_REGEXP = '\W*#\W*define\W+([a-z0-9_]+)\W+([a-z0-9_]+)'
+if sys.version_info >= (3, 0):
+  MACROS_REGEXP = MACROS_REGEXP.encode("ascii")
 DEFAULT_ENUM = ""
 
 #-------------------------------------------------------------------------------
