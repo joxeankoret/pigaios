@@ -49,8 +49,9 @@ try:
 
   from ml.pigaios_ml import CPigaiosClassifier, CPigaiosMultiClassifier
   has_ml = True
-except ImportError:
+except ImportError as ie:
   has_ml = False
+  log("Don't have ml: %s" %(str(ie.args)))
 
 try:
   long        # Python 2
@@ -136,7 +137,8 @@ def seems_false_positive(src_name, bin_name):
 
 #-------------------------------------------------------------------------------
 def json_loads(line):
-  return json.loads(line.decode("utf-8","ignore"))
+  data = line.decode("utf-8", "ignore") if hasattr(line, "decode") else line
+  return json.loads(data)
 
 #-------------------------------------------------------------------------------
 PROFILING = os.getenv("DIAPHORA_PROFILE") is not None
@@ -251,7 +253,7 @@ class CBinaryToSourceImporter:
         raise Exception("Unknow data type for field %s" % field)
 
     tmp = []
-    header = ret.keys()
+    header = list(ret.keys())
     header.sort()
 
     for key in ML_FIELDS_ORDER:
@@ -282,7 +284,7 @@ class CBinaryToSourceImporter:
           self.ml_classifier = CPigaiosClassifier()
           self.ml_model = self.ml_classifier.load_model()
 
-        line = map(float, line)
+        line = list(map(float, line))
         ml = self.ml_model.predict_proba(np.array(line).reshape(1, -1))
 
     fields = COMPARE_FIELDS
@@ -594,7 +596,6 @@ class CBinaryToSourceImporter:
         if score >= 0.3 or ml == 1.0:
           self.add_match(match_id, func_ea, match_name, heur_name.capitalize(),
                          score, reasons, ml, qr)
-
         if score < min_score and score > 0.0:
           min_score = score
         if score > max_score:

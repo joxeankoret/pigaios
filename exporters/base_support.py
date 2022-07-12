@@ -189,7 +189,7 @@ def json_loads(line):
 def _pickle_method(method):
   func_name = method.im_func.__name__
   obj = method.im_self
-  cls = method.im_class
+  cls = method.__class__
   return _unpickle_method, (func_name, obj, cls)
 
 def _unpickle_method(func_name, obj, cls):

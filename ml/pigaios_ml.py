@@ -51,7 +51,7 @@ from sklearn import neighbors
 from sklearn import naive_bayes
 from sklearn import linear_model
 from sklearn import neural_network
-from sklearn.externals import joblib
+import joblib
 from sklearn.model_selection import cross_val_score
 from sklearn.utils.validation import check_is_fitted
 
@@ -112,7 +112,7 @@ class CPigaiosMultiClassifier(object):
   def __init__(self, random_state=None):
     self.clfs = {}
     for classifier, name, args in ML_CLASSIFIERS:
-      has_seed = 'random_state' in dir(classifier.__init__.im_class())
+      has_seed = 'random_state' in dir(classifier.__class__)
       if has_seed:
         self.clfs[name] = classifier(random_state=random_state)
         for arg_name, arg_value in args:
@@ -178,7 +178,7 @@ class CPigaiosClassifier:
       next(reader, None)
       for row in reader:
         is_match = row[2]
-        x_values.append(map(float, row[3:]))
+        x_values.append(list(map(float, row[3:])))
         y_values.append([float(is_match)])
 
     return np.array(x_values), np.array(y_values)
@@ -193,7 +193,7 @@ class CPigaiosClassifier:
     zeros_bad = 0
     total_matches = 0
     for i in range(0, len(X)):
-      tmp = X[i]
+      tmp = np.asarray(X[i])
       ret = self.clf.predict(tmp.reshape(1, -1))
       ret = round(ret)
       if ret == y[i]:

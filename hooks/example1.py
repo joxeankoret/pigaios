@@ -21,12 +21,12 @@ class CMyHooks:
     segname = ".libopenssl.so.RO"
     for s in Segments():
       if SegName(s) == segname:
-        start_ea, end_ea = SegStart(s), SegEnd(s)
+        start_ea, end_ea = get_segm_start(s), get_segm_end(s)
         self.pigaios.log("Limiting the export to 0x%08x -> 0x%08x" % (start_ea, end_ea))
         return start_ea, end_ea
 
     # We didn't find the segment, export the whole database
-    return MinEA(), MaxEA()
+    return inf_get_min_ea(), inf_get_max_ea()
 
   def before_export_function(self, f, name):
     """
