@@ -42,17 +42,6 @@ import string
 
 from decimal import Decimal
 
-try:
-  long        # Python 2
-except NameError:
-  long = int  # Python 3
-
-try:
-  raw_input          # Python 2
-except NameError:
-  raw_input = input  # Python 3
-
-
 #-------------------------------------------------------------------------------
 __version__ = '1.0'
 __all__ = [
@@ -137,23 +126,23 @@ class SimpleEval:
     elif op == "*":
       result *= val2
     elif op == "<<":
-      tmp1 = long(val1)
-      tmp2 = long(val2)
+      tmp1 = int(val1)
+      tmp2 = int(val2)
       tmp1 <<= tmp2
       result = Decimal(tmp1)
     elif op == ">>":
-      tmp1 = long(val1)
-      tmp2 = long(val2)
+      tmp1 = int(val1)
+      tmp2 = int(val2)
       tmp1 >>= tmp2
       result = Decimal(tmp1)
     elif op == "|":
-      tmp1 = long(val1)
-      tmp2 = long(val2)
+      tmp1 = int(val1)
+      tmp2 = int(val2)
       tmp1 |= tmp2
       result = Decimal(tmp1)
     elif op == "&":
-      tmp1 = long(val1)
-      tmp2 = long(val2)
+      tmp1 = int(val1)
+      tmp2 = int(val2)
       tmp1 &= tmp2
       result = Decimal(tmp1)
     elif op == "**":
@@ -187,9 +176,9 @@ class SimpleEval:
     if token.startswith("0x"):
       if token.endswith(".0"):
         token = token.rstrip(".0")
-      token = long(token, 16)
+      token = int(token, 16)
     elif token[0] == "0" and len(token) == 1 and token.find(".") == -1:
-      token = long(token, 8)
+      token = int(token, 8)
 
     return Decimal(token)
 
@@ -276,7 +265,7 @@ def main():
 
   evaluator = SimpleEval()
   while 1:
-    cmd = raw_input("C expr> ")
+    cmd = input("C expr> ")
     if cmd.lower() in exit_cmds:
       break
     elif cmd == "":

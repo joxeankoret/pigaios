@@ -27,11 +27,6 @@ import decimal
 from SimpleEval import SimpleEval
 from kfuzzy import CKoretFuzzyHashing
 
-try:
-  long        # Python 2
-except NameError:
-  long = int  # Python 3
-
 #-------------------------------------------------------------------------------
 MACROS_REGEXP = '\W*#\W*define\W+([a-z0-9_]+)\W+([a-z0-9_]+)'
 DEFAULT_ENUM = ""
@@ -91,7 +86,7 @@ class CMacroExtractor:
         if type(d[element]) is decimal.Decimal:
           eng_str = d[element].to_eng_string()
           if str(eng_str).find(".") == -1:
-            value = "0x%08x" % long(eng_str)
+            value = "0x%08x" % int(eng_str)
 
         if value is None:
           value = str(d[element])
@@ -106,7 +101,7 @@ class CMacroExtractor:
 
   def extract(self, filename):
     self.filename = filename
-    return self.extract_from_buffer(open(filename, "rb").read())
+    return self.extract_from_buffer(open(filename, "r").read())
 
   def extract_from_buffer(self, buf):
     ret = {}

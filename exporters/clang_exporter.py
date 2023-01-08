@@ -360,8 +360,8 @@ class CLangParser:
 
       # Same as before but we pass to the member any literal expression.
       method_name = 'visit_LITERAL'
-      if children.kind >= CursorKind.INTEGER_LITERAL and \
-           children.kind <= CursorKind.STRING_LITERAL:
+      if children.kind.value >= CursorKind.INTEGER_LITERAL.value and \
+           children.kind.value <= CursorKind.STRING_LITERAL.value:
         if method_name in dir(obj):
           func = getattr(obj, method_name)
           if func(children):
@@ -386,7 +386,7 @@ class CClangExporter(CBaseExporter):
     start_loc = cursor.location
     filename = start_loc.file.name
     if filename not in self.source_cache:
-      self.source_cache[filename] = open(filename, "rb").readlines()
+      self.source_cache[filename] = open(filename, "r").readlines()
 
     source = "".join(self.source_cache[filename][start_line-1:end_line])
     return source
@@ -405,7 +405,7 @@ class CClangExporter(CBaseExporter):
 
   def strip_macros(self, filename):
     ret = []
-    for line in open(filename, "rb").readlines():
+    for line in open(filename, "r").readlines():
       line = line.strip("\r").strip("\n")
       if line.find("#include") == -1 and line.strip(" ").strip("\t").strip(" ").startswith("#"):
         ret.append("// stripped: %s" % line)
