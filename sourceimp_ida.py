@@ -73,7 +73,7 @@ def indent_source(src):
   try:
     p = Popen(indent_cmd, stdout=PIPE, stdin=PIPE, stderr=STDOUT)
     indenter = p.communicate(input=src)[0]
-    tmp = indenter.decode()
+    tmp = indenter
     if tmp != "" and tmp is not None:
       tmp = tmp.replace("<", "&lt;").replace(">", "&gt;")
       return tmp
@@ -335,11 +335,13 @@ class CDiffChooser(Choose):
     return n
 
   def OnSelectLine(self, n):
+    n = n[0]
     self.selcount += 1
     row = self.items[n]
     ea = long(row[3], 16)
-    if isEnabled(ea):
-      jumpto(ea)
+    jumpto(ea)
+    # if isEnabled(ea):
+    #   jumpto(ea)
 
   def OnSelectionChange(self, sel_list):
     self.selected_items = sel_list
@@ -406,7 +408,7 @@ class CDiffChooser(Choose):
         Warning("Cannot decompile function 0x%08x" % ea)
         return False
 
-      buf1 = indent_source(row[0].decode("utf-8", "ignore"))
+      buf1 = indent_source(row[0])
       buf2 = proto
       buf2 += u"\n".join(self.differ.pseudo[ea])
       new_buf = indent_source(buf2)
