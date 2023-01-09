@@ -25,8 +25,16 @@ import json
 import shlex
 import sqlite3
 import itertools
-import ConfigParser
+import configparser
 
+### To solve the dll missing problem in windows
+# import clang.cindex
+# clang.cindex.Config.set_library_file('C:/Program Files/LLVM/bin/libclang.dll')
+# clang.cindex.Config.set_library_path('C:/Program Files/LLVM/bin')
+# os.add_dll_directory("C:/Program Files/LLVM/bin")
+
+### to solve importing problem in windows & linux
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from threading import current_thread
 from terminalsize import get_terminal_size
 
@@ -183,7 +191,7 @@ def all_combinations(items):
 
 #-------------------------------------------------------------------------------
 def json_loads(line):
-  return json.loads(line.decode("utf-8","ignore"))
+  return json.loads(line)
 
 #-------------------------------------------------------------------------------
 def _pickle_method(method):
@@ -203,15 +211,15 @@ def _unpickle_method(func_name, obj, cls):
 
   return func.__get__(obj, cls)
 
-import copy_reg
+import copyreg
 import types
-copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
+copyreg.pickle(types.MethodType, _pickle_method, _unpickle_method)
 
 #-------------------------------------------------------------------------------
 class CBaseExporter(object):
   def __init__(self, cfg_file):
     self.cfg_file = cfg_file
-    self.config = ConfigParser.ConfigParser()
+    self.config = configparser.ConfigParser()
     self.config.optionxform = str
     self.config.read(cfg_file)
     self.db = {}
@@ -228,8 +236,13 @@ class CBaseExporter(object):
     ident = "%d-%d" % (pid, tid)
     if ident not in self.db:
       self.create_schema(self.filename)
+    
+    db_idx = self.db[ident]
+    db_conn = db_idx[0](db_idx[1],isolation_level=None, check_same_thread=False)
+    db_conn.text_factory = str
+    db_conn.row_factory = sqlite3.Row
 
-    return self.db[ident]
+    return db_conn
 
   def create_schema(self, filename, remove = False):
     self.filename = filename
@@ -240,14 +253,16 @@ class CBaseExporter(object):
     tid = current_thread().ident
     pid = os.getpid()
     ident = "%d-%d" % (pid, tid)
-    self.db[ident] = sqlite3.connect(filename, isolation_level=None, check_same_thread=False)
-    self.db[ident].text_factory = str
-    self.db[ident].row_factory = sqlite3.Row
+    self.db[ident] = (sqlite3.connect,filename) 
 
     if not remove:
       return
 
-    cur = self.db[ident].cursor()
+    db_idx = self.db[ident]
+    db_conn = db_idx[0](db_idx[1],isolation_level=None, check_same_thread=False)
+    db_conn.text_factory = str
+    db_conn.row_factory = sqlite3.Row
+    cur = db_conn.cursor()
     sql = """create table if not exists functions(
                           id integer not null primary key,
                           ea text,
@@ -417,11 +432,9 @@ class CBaseExporter(object):
         cur.execute(sql, (callee,))
         row = cur.fetchone()
         if row is not None:
-          cur2 = self.get_db().cursor()
           sql = "insert into callgraph (caller, callee) values (?, ?)"
           try:
-            cur2.execute(sql, (str(func_id), str(row[0])))
-            cur2.close()
+            cur.execute(sql, (str(func_id), str(row[0])))
           except KeyboardInterrupt:
             raise
           except:
